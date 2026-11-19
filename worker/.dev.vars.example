@@ -24,3 +24,12 @@ SIGNING_SECRET=SIGNING_SECRET_PLACEHOLDER
 # 不配 → Worker 自带 Cron 跑定时任务；配 waker 给的 key → 改由 waker 回调触发；
 # 配保留值 false → 显式关闭自动触发。只写进 GitHub Secrets、不要进仓库。
 # WAKER_SIGNING_KEY=
+#
+# PIX_SERVER_URL（可选，Worker secret）：机器侧 private 发布基地址。
+# 代码只在此基地址后拼 /health、/generate 等路径，含平台令牌的完整接入形式以用户侧上机实测为准。
+# PIX_SERVER_URL=http://127.0.0.1:8190
+#
+# PIX_SERVER_SECRET（可选，Worker secret）：机器侧代理共享密钥（与机器 .env 同值）。
+# 请求机器时在请求头带 X-Pix-Secret。
+# PIX_SERVER_SECRET=
+
