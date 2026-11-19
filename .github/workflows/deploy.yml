@@ -44,6 +44,8 @@ jobs:
           SETUP_SECRET: ${{ secrets.SETUP_SECRET }}
           SIGNING_SECRET: ${{ secrets.SIGNING_SECRET }}
           WAKER_SIGNING_KEY: ${{ secrets.WAKER_SIGNING_KEY }}
+          PIX_SERVER_URL: ${{ secrets.PIX_SERVER_URL }}
+          PIX_SERVER_SECRET: ${{ secrets.PIX_SERVER_SECRET }}
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           D1_DATABASE_ID: ${{ secrets.D1_DATABASE_ID }}
