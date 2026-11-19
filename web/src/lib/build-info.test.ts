@@ -26,9 +26,9 @@ function git(args: string[]): string | null {
 
 /** 独立算一遍 git describe 的展示形态，和生成脚本比对（证明没有写死）。 */
 function expectedVersion(): string {
-  const described = git(["describe", "--tags", "--long"])
+  const described = git(["describe", "--tags", "--long", "--match=v[0-9]*"])
   if (described) {
-    const matched = described.match(/^(.+)-(\d+)-g([0-9a-f]+)$/)
+    const matched = described.match(/^(v\d+\.\d+\.\d+)-(\d+)-g([0-9a-f]+)$/)
     if (matched) return `${matched[1]}-${matched[2]}-${matched[3]}`
   }
   const hash = git(["rev-parse", "--short", "HEAD"])
