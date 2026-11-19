@@ -135,6 +135,107 @@ def test_merge_lora_inplace_real_tensors():
         assert not os.path.exists(out_path + ".tmp")
 
 
+def test_merge_lora_inplace_production_lora_unet_format():
+    """验证生产实际 LCM-LoRA 的 `lora_unet_` 键格式（regular_lora 分支）正确打入权重。
+
+    `test_merge_lora_inplace_real_tensors` 覆盖的是 diffusers 键格式（`...to_q.lora.down.weight`，
+    命中 `LoRAAdapter.load` 的 diffusers3_lora 分支）；本用例覆盖生产文件真实键格式
+    （`lora_unet_down_blocks_0_..._to_q.lora_down.weight`，命中 regular_lora 分支）。
+    """
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        base_path = os.path.join(tmp_dir, "base.safetensors")
+        lora_path = os.path.join(tmp_dir, "lora.safetensors")
+        out_path = os.path.join(tmp_dir, "out.safetensors")
+
+        target_layer = "model.diffusion_model.input_blocks.1.1.transformer_blocks.0.attn1.to_q.weight"
+        orig_weight = torch.randn(320, 320, dtype=torch.float16)
+
+        base_tensors = {
+            "model.diffusion_model.input_blocks.0.0.weight": torch.randn(320, 4, 3, 3, dtype=torch.float16),
+            "model.diffusion_model.out.2.weight": torch.randn(4, 320, 3, 3, dtype=torch.float16),
+            target_layer: orig_weight.clone(),
+            "cond_stage_model.transformer.text_model.encoder.layers.0.mlp.fc1.weight": torch.randn(3072, 768, dtype=torch.float16),
+            "first_stage_model.decoder.conv_in.weight": torch.randn(512, 4, 3, 3, dtype=torch.float16),
+        }
+        save_file(base_tensors, base_path)
+
+        down_w = torch.randn(16, 320, dtype=torch.float16)
+        up_w = torch.randn(320, 16, dtype=torch.float16)
+        lora_tensors = {
+            "lora_unet_down_blocks_0_attentions_0_transformer_blocks_0_attn1_to_q.lora_down.weight": down_w,
+            "lora_unet_down_blocks_0_attentions_0_transformer_blocks_0_attn1_to_q.lora_up.weight": up_w,
+            "lora_unet_down_blocks_0_attentions_0_transformer_blocks_0_attn1_to_q.alpha": torch.tensor(16.0),
+        }
+        save_file(lora_tensors, lora_path)
+
+        merge_lora_to_checkpoint(base_path, lora_path, out_path, strength=1.0)
+
+        assert os.path.isfile(out_path)
+        merged_tensors = load_file(out_path)
+
+        assert target_layer in merged_tensors
+        merged_w = merged_tensors[target_layer]
+        diff_norm = (merged_w.float() - orig_weight.float()).norm().item()
+        assert diff_norm > 0.1
+
+        # CLIP 与 VAE 完好保留未被破坏
+        assert "cond_stage_model.transformer.text_model.encoder.layers.0.mlp.fc1.weight" in merged_tensors
+        assert "first_stage_model.decoder.conv_in.weight" in merged_tensors
+        assert not os.path.exists(out_path + ".tmp")
+
+
+def test_merge_lora_raises_when_no_layers_matched():
+    """key_map 静默失配时（load_lora 返回空映射）拒绝产出未打补丁的 checkpoint。"""
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        base_path = os.path.join(tmp_dir, "base.safetensors")
+        lora_path = os.path.join(tmp_dir, "lora.safetensors")
+        out_path = os.path.join(tmp_dir, "out.safetensors")
+
+        with open(base_path, "wb") as f:
+            f.write(b"base")
+        with open(lora_path, "wb") as f:
+            f.write(b"lora")
+
+        mock_comfy = MagicMock()
+        mock_utils = MagicMock()
+        mock_lora = MagicMock()
+        mock_lora_convert = MagicMock()
+        mock_model_detection = MagicMock()
+
+        mock_comfy.utils = mock_utils
+        mock_comfy.lora = mock_lora
+        mock_comfy.lora_convert = mock_lora_convert
+        mock_comfy.model_detection = mock_model_detection
+
+        base_sd = {
+            "model.diffusion_model.input_blocks.1.1.transformer_blocks.0.attn1.to_q.weight": MagicMock(),
+        }
+        mock_utils.load_torch_file.side_effect = [
+            (base_sd, {"modelspec.predict_key": "epsilon"}),
+            {"lora_key": "dummy"},
+        ]
+        mock_lora_convert.convert_lora.return_value = {"lora_key": "dummy"}
+        mock_model_detection.unet_prefix_from_state_dict.return_value = "model.diffusion_model."
+        mock_model_detection.model_config_from_unet.return_value = None
+        mock_lora.load_lora.return_value = {}  # 未匹配任何层
+
+        modules = {
+            "comfy": mock_comfy,
+            "comfy.utils": mock_utils,
+            "comfy.lora": mock_lora,
+            "comfy.lora_convert": mock_lora_convert,
+            "comfy.model_detection": mock_model_detection,
+            "torch": MagicMock(),
+        }
+
+        with patch.dict(sys.modules, modules):
+            with pytest.raises(RuntimeError, match="No LoRA layers were matched"):
+                merge_lora_to_checkpoint(base_path, lora_path, out_path, strength=1.0)
+
+        assert not os.path.exists(out_path)
+        assert not os.path.exists(out_path + ".tmp")
+
+
 def test_merge_lora_main_cli():
     with tempfile.TemporaryDirectory() as tmp_dir:
         base_path = os.path.join(tmp_dir, "base.safetensors")

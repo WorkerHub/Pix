@@ -159,6 +159,13 @@ def merge_lora_to_checkpoint(
 
     logger.info(f"Successfully patched {patched_count} layers in-place.")
 
+    # 防止 key_map 静默失配：未匹配任何层时产出的是未打补丁的基座，会以 8 步跑出垃圾图。
+    if patched_count == 0:
+        raise RuntimeError(
+            "No LoRA layers were matched against the checkpoint — "
+            "refusing to write an unpatched merged model."
+        )
+
     # 释放 LoRA 与映射表临时引用，保持内存极简
     del loaded, lora_sd, key_map
     gc.collect()
