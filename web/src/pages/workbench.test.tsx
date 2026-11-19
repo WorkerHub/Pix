@@ -133,7 +133,8 @@ describe("生图页（规格 §5，单页，UI 极简）", () => {
     await waitFor(() => {
       expect(genApi.submit).toHaveBeenCalledWith({
         prompt: "赛博朋克城市",
-        size: "portrait"
+        size: "portrait",
+        model: "realistic-lcm"
       })
     })
 
@@ -444,7 +445,7 @@ describe("生图页（规格 §5，单页，UI 极简）", () => {
     })
 
     await act(async () => {
-      await vi.advanceTimersByTimeAsync(5000)
+      await vi.advanceTimersByTimeAsync(6000)
     })
 
     await waitFor(() => {

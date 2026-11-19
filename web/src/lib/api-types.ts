@@ -215,6 +215,32 @@ export interface AdminUserActionResult {
 
 export type GenerateSize = "portrait" | "square"
 
+export type GenerateModel =
+  | "realistic-lcm"
+  | "realistic"
+  | "majicmix"
+  | "dreamshaper"
+  | "counterfeit"
+
+export const DEFAULT_MODEL: GenerateModel = "realistic-lcm"
+
+/** 可选模型列表（仅机器值；展示文案走 locales 的 generate.model.*） */
+export const MODEL_OPTIONS: GenerateModel[] = [
+  "realistic-lcm",
+  "realistic",
+  "majicmix",
+  "dreamshaper",
+  "counterfeit"
+]
+
+/** 模型展示文案的 i18n key；未知或缺失时回落默认模型的 key。 */
+export function modelLabelKey(model?: string | null): string {
+  const m = model && MODEL_OPTIONS.includes(model as GenerateModel)
+    ? model
+    : DEFAULT_MODEL
+  return `generate.model.${m}`
+}
+
 /** GET /api/gen/health：机器探活。online:false 时无 ready 字段。 */
 export interface GenHealth {
   online: boolean
@@ -224,6 +250,7 @@ export interface GenHealth {
 export interface GenerateInput {
   prompt: string
   size: GenerateSize
+  model?: GenerateModel
 }
 
 /** POST /api/gen：除 400 外一律 200，前端只认形状。 */
