@@ -344,3 +344,57 @@ describe("materialize-secrets：可选的 WAKER_SIGNING_KEY", () => {
     expect(res.stdout).toContain("WAKER_SIGNING_KEY: 已关闭")
   })
 })
+
+describe("materialize-secrets：可选的 PIX_SERVER_URL 与 PIX_SERVER_SECRET", () => {
+  it("未配置 → 不写进 secrets.json，部署照常成功", () => {
+    const res = runScript(makeSandbox(), VALID_ENV)
+
+    expect(res.status).toBe(0)
+    expect(secretKeys(res.secretsPath)).toEqual([
+      "SETUP_SECRET",
+      "SIGNING_SECRET"
+    ])
+    expect(res.stdout).toContain("PIX_SERVER_URL: 未配置")
+    expect(res.stdout).toContain("PIX_SERVER_SECRET: 未配置")
+  })
+
+  it("已配置 → 注入 secrets.json 且日志绝不打印值", () => {
+    const res = runScript(makeSandbox(), {
+      ...VALID_ENV,
+      PIX_SERVER_URL: "http://10.0.0.1:8190",
+      PIX_SERVER_SECRET: "machine-secret-unit-test"
+    })
+
+    expect(res.status).toBe(0)
+    const secrets = JSON.parse(readFileSync(res.secretsPath, "utf8")) as Record<
+      string,
+      string
+    >
+    expect(secrets.PIX_SERVER_URL).toBe("http://10.0.0.1:8190")
+    expect(secrets.PIX_SERVER_SECRET).toBe("machine-secret-unit-test")
+    expect(secretKeys(res.secretsPath)).toEqual([
+      "SETUP_SECRET",
+      "SIGNING_SECRET",
+      "PIX_SERVER_URL",
+      "PIX_SERVER_SECRET"
+    ])
+    expect(res.stdout).toContain("PIX_SERVER_URL: 已配置")
+    expect(res.stdout).toContain("PIX_SERVER_SECRET: 已配置")
+    expect(res.stdout + res.stderr).not.toContain("10.0.0.1")
+    expect(res.stdout + res.stderr).not.toContain("machine-secret-unit-test")
+  })
+
+  it("占位值一律按未配置处理", () => {
+    const res = runScript(makeSandbox(), {
+      ...VALID_ENV,
+      PIX_SERVER_URL: "PIX_SERVER_URL_PLACEHOLDER",
+      PIX_SERVER_SECRET: "replace-with-machine-secret"
+    })
+
+    expect(res.status).toBe(0)
+    expect(secretKeys(res.secretsPath)).not.toContain("PIX_SERVER_URL")
+    expect(secretKeys(res.secretsPath)).not.toContain("PIX_SERVER_SECRET")
+    expect(res.stdout).toContain("PIX_SERVER_URL: 未配置")
+    expect(res.stdout).toContain("PIX_SERVER_SECRET: 未配置")
+  })
+})
