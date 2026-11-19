@@ -19,6 +19,7 @@ import type {
   AdminUserActionResult,
   GenerateInput,
   GenerateResult,
+  GenerationHistoryResult,
   GenHealth,
   JobStatus,
   LoginResult,
@@ -345,10 +346,26 @@ export const genApi = {
     }),
 
   status: (jobId: string) =>
-    request<JobStatus>(`/gen/status/${encodeURIComponent(jobId)}`)
+    request<JobStatus>(`/gen/status/${encodeURIComponent(jobId)}`),
+
+  history: (page = 1, pageSize = 12) =>
+    request<GenerationHistoryResult>(
+      `/gen/history?page=${encodeURIComponent(page)}&pageSize=${encodeURIComponent(pageSize)}`
+    ),
+
+  deleteHistory: (id: number) =>
+    request<{ success: boolean }>(`/gen/history/${encodeURIComponent(id)}`, {
+      method: "DELETE"
+    })
 }
 
 /** 成品图 URL：真实 <img> 的 src（同源会话自动带 Cookie）。 */
 export function genImageUrl(jobId: string): string {
   return `/api/gen/image/${encodeURIComponent(jobId)}`
+}
+
+/** 历史图 URL：真实 <img> 的 src 或下载链接。 */
+export function genHistoryImageUrl(id: number, download = false): string {
+  const base = `/api/gen/history/${encodeURIComponent(id)}/image`
+  return download ? `${base}?download=1` : base
 }

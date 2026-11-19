@@ -3,11 +3,16 @@
  * 顺带锁住硬约束：基线语句内部不得出现 `;`、表名一律由 tables.ts 拼装。
  */
 import { describe, expect, it } from "vitest"
-import { BASELINE_MIGRATION, getMigrations } from "../src/lib/migrations"
+import {
+  BASELINE_MIGRATION,
+  GENERATIONS_MIGRATION,
+  getMigrations
+} from "../src/lib/migrations"
 import { splitStatements } from "../src/lib/migrations-runner"
 import { ledgerName, runSetup } from "../src/lib/setup"
 import {
   emailCodesTable,
+  generationsTable,
   legacyMigrationsTable,
   migrationsTable,
   sessionsTable,
@@ -27,11 +32,12 @@ function columnNames(db: SqliteD1, table: string): string[] {
 }
 
 describe("迁移定义", () => {
-  it("单一基线 schema_v1，语句内部不含分号", () => {
+  it("单一基线 schema_v1 与增量 schema_v2，语句内部不含分号", () => {
     const prefix = "wiki_"
     const migrations = getMigrations(prefix)
     expect(migrations.map((migration) => migration.name)).toEqual([
-      BASELINE_MIGRATION
+      BASELINE_MIGRATION,
+      GENERATIONS_MIGRATION
     ])
     for (const migration of migrations) {
       const statements = splitStatements(migration.sql)
@@ -89,7 +95,8 @@ describe("账本命名", () => {
     expect(again.success).toBe(true)
     if (again.success) {
       expect(again.migrations).toEqual([
-        { name: BASELINE_MIGRATION, status: "skipped" }
+        { name: BASELINE_MIGRATION, status: "skipped" },
+        { name: GENERATIONS_MIGRATION, status: "skipped" }
       ])
     }
   })
@@ -110,7 +117,8 @@ describe("旧账本改名承接", () => {
     expect(result.success).toBe(true)
     if (result.success) {
       expect(result.migrations).toEqual([
-        { name: BASELINE_MIGRATION, status: "skipped" }
+        { name: BASELINE_MIGRATION, status: "skipped" },
+        { name: GENERATIONS_MIGRATION, status: "skipped" }
       ])
     }
 
@@ -121,7 +129,10 @@ describe("旧账本改名承接", () => {
     const rows = db.db
       .prepare(`SELECT name FROM ${migrationsTable(prefix)}`)
       .all() as Array<{ name: string }>
-    expect(rows.map((row) => row.name)).toEqual([BASELINE_MIGRATION])
+    expect(rows.map((row) => row.name)).toEqual([
+      BASELINE_MIGRATION,
+      GENERATIONS_MIGRATION
+    ])
   })
 
   it("新旧账本同存 → 409 LEDGER_CONFLICT，一个表都不动", async () => {
@@ -213,9 +224,10 @@ describe("生产库只读识别兼容（存量已应用 v1..v6）", () => {
     const result = await runSetup(env)
     expect(result.success).toBe(true)
     if (result.success) {
-      // 必须被只读识别为已最新，仅包含单一 V1 且状态为 skipped
+      // 必须被只读识别为已最新，包含 V1 与 V2 且状态均为 skipped
       expect(result.migrations).toEqual([
-        { name: BASELINE_MIGRATION, status: "skipped" }
+        { name: BASELINE_MIGRATION, status: "skipped" },
+        { name: GENERATIONS_MIGRATION, status: "skipped" }
       ])
     }
 
@@ -284,5 +296,43 @@ describe("单一 V1 终态表结构验证（全新安装）", () => {
         )
         .run(now + 600, now)
     ).toThrow(/CHECK/i)
+  })
+
+  it("generations 表：字段与约束完整", async () => {
+    const { env, db } = await initializedContext()
+    const prefix = activePrefix(env)
+    const columns = columnNames(db, generationsTable(prefix))
+    expect(columns).toEqual([
+      "id",
+      "user_id",
+      "job_id",
+      "model",
+      "prompt_original",
+      "prompt_effective",
+      "size",
+      "r2_key",
+      "created_at"
+    ])
+  })
+
+  it("存量库只有 schema_v1 时：增量应用 schema_v2，并建出 generations 表", async () => {
+    const { env, db } = await initializedContext()
+    const prefix = activePrefix(env)
+    const ledger = migrationsTable(prefix)
+    // 模拟只有 v1 记账的存量库
+    db.db.exec(`DELETE FROM ${ledger}`)
+    db.db
+      .prepare(`INSERT INTO ${ledger} (name, applied_at) VALUES (?, ?)`)
+      .run(BASELINE_MIGRATION, Math.floor(Date.now() / 1000))
+
+    const result = await runSetup(env)
+    expect(result.success).toBe(true)
+    if (result.success) {
+      expect(result.migrations).toEqual([
+        { name: BASELINE_MIGRATION, status: "skipped" },
+        { name: GENERATIONS_MIGRATION, status: "applied" }
+      ])
+    }
+    expect(tableNames(db)).toContain(generationsTable(prefix))
   })
 })
