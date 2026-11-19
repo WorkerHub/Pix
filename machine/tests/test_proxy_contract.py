@@ -136,6 +136,10 @@ def reset_server_state(mock_comfy_server):
     mock_comfy_server.state["prompt_error"] = False
     mock_comfy_server.state["last_received_prompt"] = None
     mock_comfy_server.state["last_received_headers"] = None
+    for k in model_manager.checkpoints_ready:
+        model_manager.checkpoints_ready[k] = False
+    for k in model_manager.loras_ready:
+        model_manager.loras_ready[k] = False
     model_manager.is_ready = True
     model_manager.lora_ready = True
     tracked_jobs.clear()

@@ -28,33 +28,23 @@ class ModelManager:
             k: v["filename"] for k, v in config.CHECKPOINTS.items()
         }
 
-        self._legacy_is_ready = False
-        self._legacy_lora_ready = False
-        self.is_downloading = False
-        self.error_message: str | None = None
         self.active_model_name = self.model_name
 
     @property
     def is_ready(self) -> bool:
-        return self.checkpoints_ready.get("realistic_vision", self._legacy_is_ready)
+        return self.checkpoints_ready["realistic_vision"]
 
     @is_ready.setter
     def is_ready(self, val: bool):
-        self._legacy_is_ready = val
         self.checkpoints_ready["realistic_vision"] = val
 
     @property
     def lora_ready(self) -> bool:
-        return self.loras_ready.get("lcm", self._legacy_lora_ready)
+        return self.loras_ready["lcm"]
 
     @lora_ready.setter
     def lora_ready(self, val: bool):
-        self._legacy_lora_ready = val
         self.loras_ready["lcm"] = val
-
-    @property
-    def fully_ready(self) -> bool:
-        return self.is_default_ready()
 
     def is_model_ready(self, model_id: str) -> bool:
         if config.SKIP_MODEL_DOWNLOAD:
@@ -107,12 +97,10 @@ class ModelManager:
             else:
                 msg = f"sha256 mismatch for {file_path}: expected {expected}, got {actual_sha256}"
                 logger.error(msg)
-                self.error_message = msg
                 return False
         except Exception as e:
             msg = f"Failed to verify file {file_path}: {e}"
             logger.error(msg)
-            self.error_message = msg
             return False
 
     def find_existing_checkpoints(self) -> list[str]:
@@ -130,8 +118,6 @@ class ModelManager:
         os.makedirs(os.path.dirname(target_path), exist_ok=True)
         tmp_path = target_path + ".download.tmp"
         logger.info(f"Downloading {label} from {url} to {tmp_path}...")
-        self.is_downloading = True
-        self.error_message = None
         try:
             timeout = httpx.Timeout(connect=30.0, read=600.0, write=60.0, pool=30.0)
             async with httpx.AsyncClient(follow_redirects=True, timeout=timeout) as client:
@@ -139,7 +125,6 @@ class ModelManager:
                     if response.status_code != 200:
                         msg = f"Download failed with HTTP status {response.status_code}"
                         logger.error(msg)
-                        self.error_message = msg
                         return False
 
                     h = hashlib.sha256()
@@ -152,7 +137,6 @@ class ModelManager:
             if actual_sha256 != expected_sha256.lower().strip():
                 msg = f"Downloaded file sha256 mismatch: expected {expected_sha256.lower().strip()}, got {actual_sha256}"
                 logger.error(msg)
-                self.error_message = msg
                 if os.path.exists(tmp_path):
                     os.remove(tmp_path)
                 return False
@@ -163,12 +147,9 @@ class ModelManager:
         except Exception as e:
             msg = f"{label} download error: {e}"
             logger.error(msg)
-            self.error_message = msg
             if os.path.exists(tmp_path):
                 os.remove(tmp_path)
             return False
-        finally:
-            self.is_downloading = False
 
     async def ensure_model(self) -> bool:
         if config.SKIP_MODEL_DOWNLOAD:

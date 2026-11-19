@@ -170,11 +170,6 @@ SKIP_MODEL_DOWNLOAD = os.getenv("SKIP_MODEL_DOWNLOAD", "0").lower() in ("1", "tr
 FIXED_NEGATIVE_PROMPT = (
     "deformed, distorted, disfigured, blurry, low-res, low quality, watermark, text, logo"
 )
-SAMPLER_NAME = "lcm"
-SCHEDULER = "sgm_uniform"
-STEPS = 8
-CFG = 1.5
-DENOISE = 1.0
 
 SIZES = {
     "portrait": {"width": 512, "height": 768},
