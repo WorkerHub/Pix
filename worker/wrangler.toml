@@ -1,0 +1,33 @@
+name = "project-template"
+main = "src/index.ts"
+compatibility_date = "2026-05-01"
+compatibility_flags = ["nodejs_compat"]
+
+# 部署期由部署脚本注入（组织级 secret，只引用不新建；见 README 与 .github/workflows）。
+# 真实值绝不进仓库：本文件提交的只有占位符。
+account_id = "CLOUDFLARE_ACCOUNT_ID_PLACEHOLDER"
+
+# 前端构建产物与 Worker 同一部署单元，绑定名固定 ASSETS。
+[assets]
+directory = "../web/dist"
+binding = "ASSETS"
+
+# 运行库（D1）。名称来自组织级 Variable，ID 来自组织级 Secret，均由部署脚本替换。
+[[d1_databases]]
+binding = "DB"
+database_name = "D1_DATABASE_NAME_PLACEHOLDER"
+database_id = "D1_DATABASE_ID_PLACEHOLDER"
+
+# 刻意不提交 [vars]：TABLE_PREFIX 只在部署期由部署脚本（scripts/materialize-secrets.mjs）
+# 按三态注入（未设置/空 → 项目默认前缀，保留字 none → ""，其他值原样）；不带该变量时
+# 运行时回落到 worker/src/config/defaults.json 的默认前缀（补尾下划线），共享库上零配置也不会串表。
+#
+# 密钥一律走 wrangler secrets（CI: deploy --secrets-file；本地：worker/.dev.vars），
+# 见 worker/.dev.vars.example。
+
+# 定时任务桩（规格 §5.5A）：原生 Cron 只在这里定义一次。waker 接入后由
+# `WAKER_SIGNING_KEY` 的取值让路（已配置 → 跳过；`false` → 显式关闭）。
+# 关闭时只把 crons 置为空数组 `crons = []`，不要整段删除 [triggers]——Cloudflare
+# 会保留已有 cron，删掉这一段并不等于关掉触发器。
+[triggers]
+crons = ["17 3 * * *"]
