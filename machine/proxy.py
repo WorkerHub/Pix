@@ -14,7 +14,7 @@ logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
 )
-logger = logging.getLogger("pix-server.proxy")
+logger = logging.getLogger("pix-service.proxy")
 
 tracked_jobs: dict[str, dict] = {}
 submission_lock = asyncio.Lock()
@@ -48,10 +48,10 @@ async def is_comfy_ready() -> bool:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    logger.info("Starting pix-server proxy...")
+    logger.info("Starting pix-service proxy...")
     asyncio.create_task(model_manager.ensure_model())
     yield
-    logger.info("Shutting down pix-server proxy...")
+    logger.info("Shutting down pix-service proxy...")
 
 
 app = FastAPI(title="Pix Server Proxy", lifespan=lifespan)
