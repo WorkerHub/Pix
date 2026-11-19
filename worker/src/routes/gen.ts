@@ -27,7 +27,7 @@ export interface GenerateRequestBody {
 }
 
 /**
- * 拼装机器侧 URL：保留基地址中可能携带的路径与平台令牌（query string）。
+ * 拼装机器侧 URL：去除基地址中的 query 与 hash，拼装干净的子路径 URL。
  */
 export function buildMachineUrl(baseUrl: string, subPath: string): string {
   try {
@@ -35,18 +35,56 @@ export function buildMachineUrl(baseUrl: string, subPath: string): string {
     const basePath = url.pathname.replace(/\/+$/, "")
     const normalizedSub = subPath.startsWith("/") ? subPath : `/${subPath}`
     url.pathname = `${basePath}${normalizedSub}`
+    url.search = ""
+    url.hash = ""
     return url.toString()
   } catch {
-    const trimmed = baseUrl.replace(/\/+$/, "")
+    const cleanBase = baseUrl.split(/[?#]/)[0].replace(/\/+$/, "")
     const normalizedSub = subPath.startsWith("/") ? subPath : `/${subPath}`
-    return `${trimmed}${normalizedSub}`
+    return `${cleanBase}${normalizedSub}`
   }
 }
 
-function machineHeaders(secret?: string): Record<string, string> {
+/**
+ * 从机器侧基地址解析平台令牌（_token 参数）。
+ */
+export function extractMachineToken(baseUrl?: string): string | null {
+  if (!baseUrl) {
+    return null
+  }
+  try {
+    const url = new URL(baseUrl)
+    const token = url.searchParams.get("_token")
+    if (token && token.trim().length > 0) {
+      return token.trim()
+    }
+    return null
+  } catch {
+    const match = baseUrl.match(/[?&]_token=([^&#]*)/)
+    if (match?.[1]) {
+      const decoded = decodeURIComponent(match[1]).trim()
+      return decoded.length > 0 ? decoded : null
+    }
+    return null
+  }
+}
+
+/**
+ * 构造发送给机器侧代理的请求头：
+ * - 携带机器代理密钥头（若配置了 PIX_SERVER_SECRET）；
+ * - 携带 Authorization: Bearer <token>（若 PIX_SERVER_URL 携带 _token 查询参数）。
+ */
+export function machineHeaders(
+  baseUrl?: string,
+  secret?: string
+): Record<string, string> {
   const headers: Record<string, string> = {}
   if (secret) {
     headers[MACHINE_AUTH_HEADER] = secret
+  }
+  const token = extractMachineToken(baseUrl)
+  if (token) {
+    headers.Authorization = `Bearer ${token}`
   }
   return headers
 }
@@ -68,7 +106,7 @@ genRoutes.get("/health", async (c) => {
     const targetUrl = buildMachineUrl(machineUrl, "/health")
     const res = await fetch(targetUrl, {
       method: "GET",
-      headers: machineHeaders(c.env.PIX_SERVER_SECRET),
+      headers: machineHeaders(machineUrl, c.env.PIX_SERVER_SECRET),
       signal: AbortSignal.timeout(4000)
     })
 
@@ -134,7 +172,7 @@ genRoutes.post("/", async (c) => {
   try {
     const targetUrl = buildMachineUrl(machineUrl, "/generate")
     const headers = {
-      ...machineHeaders(c.env.PIX_SERVER_SECRET),
+      ...machineHeaders(machineUrl, c.env.PIX_SERVER_SECRET),
       "Content-Type": "application/json"
     }
 
@@ -190,7 +228,7 @@ genRoutes.get("/status/:jobId", async (c) => {
     )
     const res = await fetch(targetUrl, {
       method: "GET",
-      headers: machineHeaders(c.env.PIX_SERVER_SECRET),
+      headers: machineHeaders(machineUrl, c.env.PIX_SERVER_SECRET),
       signal: AbortSignal.timeout(8000)
     })
 
@@ -225,7 +263,7 @@ genRoutes.get("/image/:jobId", async (c) => {
     )
     const res = await fetch(targetUrl, {
       method: "GET",
-      headers: machineHeaders(c.env.PIX_SERVER_SECRET),
+      headers: machineHeaders(machineUrl, c.env.PIX_SERVER_SECRET),
       signal: AbortSignal.timeout(15000)
     })
 
