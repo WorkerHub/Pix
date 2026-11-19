@@ -12,6 +12,7 @@ import { getTablePrefix, isValidTablePrefix } from "./lib/table-prefix"
 import { authMiddleware } from "./middleware/auth"
 import { adminRoutes } from "./routes/admin"
 import { authRoutes } from "./routes/auth"
+import { genRoutes } from "./routes/gen"
 import { meRoutes } from "./routes/me"
 import { twoFactorManageRoutes } from "./routes/twofa-manage"
 import { publicRoutes } from "./routes/public"
@@ -83,6 +84,7 @@ app.route("/api/auth", authRoutes)
 app.route("/api/auth/2fa", twoFactorManageRoutes)
 app.route("/api/me", meRoutes)
 app.route("/api/admin", adminRoutes)
+app.route("/api/gen", genRoutes)
 app.route("/api/setup", setupRoutes)
 app.route("/_waker", wakerRoutes)
 
