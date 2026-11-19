@@ -4,7 +4,7 @@ import { ApiError, genApi } from "@/lib/api"
 import { describeApiError } from "@/lib/api-errors"
 import {
   DEFAULT_MODEL,
-  type GenerateModel,
+  type GenerationModel,
   type GenerateSize
 } from "@/lib/api-types"
 import {
@@ -32,8 +32,9 @@ export function WorkbenchPage() {
   const { t } = useTranslation()
   const [prompt, setPrompt] = useState("")
   const [size, setSize] = useState<GenerateSize>("portrait")
-  const [model, setModel] = useState<GenerateModel>(DEFAULT_MODEL)
+  const [model, setModel] = useState<GenerationModel>(DEFAULT_MODEL)
   const [phase, setPhase] = useState<GenPhase>("idle")
+  const [isGeneratingDone, setIsGeneratingDone] = useState(false)
   const [jobId, setJobId] = useState<string | null>(null)
   const [submittedAt, setSubmittedAt] = useState<number | null>(null)
   const [elapsed, setElapsed] = useState(0)
@@ -57,6 +58,8 @@ export function WorkbenchPage() {
 
   const phaseRef = useRef(phase)
   phaseRef.current = phase
+  const isGeneratingDoneRef = useRef(isGeneratingDone)
+  isGeneratingDoneRef.current = isGeneratingDone
   const jobIdRef = useRef(jobId)
   jobIdRef.current = jobId
   const submittedAtRef = useRef(submittedAt)
@@ -111,6 +114,42 @@ export function WorkbenchPage() {
     }
   }, [])
 
+  /** Boss 战爆开完成或超时降级：正式结算完成态与战利品 */
+  const handleBattleExplode = useCallback(() => {
+    setIsGeneratingDone(false)
+    setPhase("done")
+    sndDone()
+    if (jobIdRef.current) {
+      const currentJobId = jobIdRef.current
+      const timestamp = submittedAtRef.current || Date.now()
+      setLootList((prev) => {
+        if (prev.some((item) => item.jobId === currentJobId)) return prev
+        return [
+          {
+            id: currentJobId,
+            jobId: currentJobId,
+            prompt: promptRef.current,
+            score: scoreRef.current,
+            elapsed: elapsedSeconds(timestamp),
+            size: sizeRef.current,
+            model: modelRef.current,
+            createdAt: Date.now()
+          },
+          ...prev
+        ]
+      })
+    }
+  }, [])
+
+  /** 爆炸动效安全超时兜底：切后台或无 Canvas 环境 2s 内直切完成态 */
+  useEffect(() => {
+    if (!isGeneratingDone) return
+    const timer = setTimeout(() => {
+      handleBattleExplode()
+    }, 2000)
+    return () => clearTimeout(timer)
+  }, [isGeneratingDone, handleBattleExplode])
+
   /** 单次查询生图任务状态 */
   const checkJobStatus = useCallback(
     async (currentJobId: string, timestamp: number) => {
@@ -122,25 +161,7 @@ export function WorkbenchPage() {
       try {
         const res = await genApi.status(currentJobId)
         if (res.state === "done") {
-          setPhase("done")
-          sndDone()
-          // 记录入库战利品
-          setLootList((prev) => {
-            if (prev.some((item) => item.jobId === currentJobId)) return prev
-            return [
-              {
-                id: currentJobId,
-                jobId: currentJobId,
-                prompt: promptRef.current,
-                score: scoreRef.current,
-                elapsed: elapsedSeconds(timestamp),
-                size: sizeRef.current,
-                model: modelRef.current,
-                createdAt: Date.now()
-              },
-              ...prev
-            ]
-          })
+          setIsGeneratingDone(true)
           return
         }
         if (res.state === "error") {
@@ -213,7 +234,9 @@ export function WorkbenchPage() {
     }, 1000)
 
     const pollInterval = setInterval(() => {
-      void checkJobStatus(jobId, submittedAt)
+      if (!isGeneratingDoneRef.current) {
+        void checkJobStatus(jobId, submittedAt)
+      }
     }, GEN_POLL_INTERVAL_MS)
 
     return () => {
@@ -344,11 +367,13 @@ export function WorkbenchPage() {
       !trimmed ||
       phase === "submitting" ||
       phase === "generating" ||
+      isGeneratingDone ||
       phase === "offline"
     ) {
       return
     }
 
+    setIsGeneratingDone(false)
     setPhase("submitting")
     setErrorMessage(null)
     setScore(0)
@@ -432,8 +457,7 @@ export function WorkbenchPage() {
     try {
       const res = await genApi.status(jobId)
       if (res.state === "done") {
-        setPhase("done")
-        sndDone()
+        handleBattleExplode()
         return
       }
       if (res.state === "error") {
@@ -463,6 +487,7 @@ export function WorkbenchPage() {
   /** 超时态或异常态「重新生成」 */
   const handleRegenerate = () => {
     clearStoredJob()
+    setIsGeneratingDone(false)
     setJobId(null)
     setSubmittedAt(null)
     setElapsed(0)
@@ -471,6 +496,7 @@ export function WorkbenchPage() {
 
   /** 回看战利品 */
   const handleSelectLoot = (item: LootItem) => {
+    setIsGeneratingDone(false)
     setJobId(item.jobId)
     setPrompt(item.prompt)
     setSize(item.size)
@@ -530,12 +556,13 @@ export function WorkbenchPage() {
           score={score}
           joyVec={joyVec}
           attackTrigger={attackTrigger}
+          isDone={isGeneratingDone}
           onScoreUpdate={(s) => setScore(s)}
-          onBattleExplode={() => {
-            setPhase("done")
-            sndDone()
+          onBattleExplode={handleBattleExplode}
+          onAgain={() => {
+            setIsGeneratingDone(false)
+            setPhase("idle")
           }}
-          onAgain={() => setPhase("idle")}
           onRecheckHealth={() => void handleRecheckHealth()}
           onCheckOnce={() => void handleCheckOnce()}
           onRegenerate={handleRegenerate}

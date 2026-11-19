@@ -1,7 +1,8 @@
 -- 本文件由 worker/src/lib/schema.ts 生成，请勿手改。
 -- 重写命令：pnpm --filter ./worker schema:sql
 -- 它是唯一基线迁移 schema_v1 的逐字镜像，worker/test/schema-sql.test.ts 断言两者完全一致。
--- 历史增量迁移链已坍缩为单一 V1，全新建表即为最终形态。
+-- 历史增量迁移链已坍缩为单一 V1，基线下全新建表即为最终形态。
+-- 注意：generations 表属 schema_v2 增量迁移，不在本基线镜像内（见下方 GENERATIONS_TABLE_DDL）。
 -- 语句之间用分号分隔，语句内部不得出现分号（迁移执行器按分号切分）。
 -- 表名/索引名里的 {prefix} 是占位符，执行时替换成生效的 TABLE_PREFIX。
 

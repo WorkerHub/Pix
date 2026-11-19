@@ -5,7 +5,7 @@ import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group"
 import {
   MODEL_OPTIONS,
   modelLabelKey,
-  type GenerateModel,
+  type GenerationModel,
   type GenerateSize
 } from "@/lib/api-types"
 import { PRESET_PROMPT_KEYS, JOY_DRAG_MAX_PX } from "@/lib/arcade-engine"
@@ -21,11 +21,11 @@ import type { GenPhase } from "@/lib/gen"
 export interface ArcadeDeckProps {
   prompt: string
   size: GenerateSize
-  model: GenerateModel
+  model: GenerationModel
   phase: GenPhase
   onPromptChange: (val: string) => void
   onSizeChange: (val: GenerateSize) => void
-  onModelChange: (val: GenerateModel) => void
+  onModelChange: (val: GenerationModel) => void
   onSubmit: (e?: React.FormEvent) => void
   onJoyMove: (vec: { x: number; y: number }) => void
   onJoyEnd: () => void
@@ -280,7 +280,7 @@ export function ArcadeDeck({
               value={model}
               onValueChange={(val) => {
                 if (val) {
-                  onModelChange(val as GenerateModel)
+                  onModelChange(val as GenerationModel)
                   sndClick()
                 }
               }}

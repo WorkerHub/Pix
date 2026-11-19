@@ -11,6 +11,7 @@ services:
     volumes:
       # Instabox 部署规范目录与数据 volume（或根据宿主机路径调整）
       - /data/docker/pix-service/models:/app/ComfyUI/models/checkpoints
+      - /data/docker/pix-service/loras:/app/ComfyUI/models/loras
       - /data/docker/pix-service/output:/app/ComfyUI/output
       - /data/docker/pix-service/user:/app/ComfyUI/user
     environment:
@@ -20,4 +21,17 @@ services:
       - MODEL_NAME=${MODEL_NAME:-Realistic_Vision_V6.0_B1_VAE.safetensors}
       - MODEL_DOWNLOAD_URL=${MODEL_DOWNLOAD_URL:-https://huggingface.co/everynightdawns/Realistic_Vision_V6.0_B1_VAE/resolve/main/Realistic_Vision_V6.0_B1_VAE.safetensors}
       - MODEL_SHA256=${MODEL_SHA256:-fe7578cb5ee0be63aa15baa894ab5d1751ff9b5b25ef611d5fafb2186d930c30}
+      - LORA_NAME=${LORA_NAME:-lcm-lora-sdv1-5.safetensors}
+      - LORA_DOWNLOAD_URL=${LORA_DOWNLOAD_URL:-https://huggingface.co/latent-consistency/lcm-lora-sdv1-5/resolve/main/pytorch_lora_weights.safetensors}
+      - LORA_SHA256=${LORA_SHA256:-8f90d840e075ff588a58e22c6586e2ae9a6f7922996ee6649a7f01072333afe4}
+      - DEFAULT_MODEL_ID=${DEFAULT_MODEL_ID:-realistic-lcm}
+      - MAJICMIX_MODEL_NAME=${MAJICMIX_MODEL_NAME:-majicmixRealistic_v7.safetensors}
+      - MAJICMIX_DOWNLOAD_URL=${MAJICMIX_DOWNLOAD_URL:-https://huggingface.co/digiplay/majicMIX_realistic_v7/resolve/main/majicmixRealistic_v7.safetensors}
+      - MAJICMIX_SHA256=${MAJICMIX_SHA256:-7c819b6d13663ed720c2254f4fe18373107dfef2448d337913c8fc545640881e}
+      - DREAMSHAPER_MODEL_NAME=${DREAMSHAPER_MODEL_NAME:-DreamShaper_8_pruned.safetensors}
+      - DREAMSHAPER_DOWNLOAD_URL=${DREAMSHAPER_DOWNLOAD_URL:-https://huggingface.co/Lykon/DreamShaper/resolve/main/DreamShaper_8_pruned.safetensors}
+      - DREAMSHAPER_SHA256=${DREAMSHAPER_SHA256:-879db523c30d3b9017143d56705015e15a2cb5628762c11d086fed9538abd7fd}
+      - COUNTERFEIT_MODEL_NAME=${COUNTERFEIT_MODEL_NAME:-Counterfeit-V3.0_fix_fp16.safetensors}
+      - COUNTERFEIT_DOWNLOAD_URL=${COUNTERFEIT_DOWNLOAD_URL:-https://huggingface.co/gsdf/Counterfeit-V3.0/resolve/main/Counterfeit-V3.0_fix_fp16.safetensors}
+      - COUNTERFEIT_SHA256=${COUNTERFEIT_SHA256:-a54c944e4c04e9d9ca43468ef5b90ea0408bb6264829a4980de79a768df7179f}
       - SKIP_MODEL_DOWNLOAD=${SKIP_MODEL_DOWNLOAD:-0}

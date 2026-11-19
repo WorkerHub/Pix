@@ -41,8 +41,8 @@ COPY . /app/machine/
 # Ensure entrypoint is executable
 RUN chmod +x /app/machine/entrypoint.sh
 
-# Volumes for host persistence (models, output, user data)
-VOLUME ["/app/ComfyUI/models/checkpoints", "/app/ComfyUI/output", "/app/ComfyUI/user"]
+# Volumes for host persistence (models, loras, output, user data)
+VOLUME ["/app/ComfyUI/models/checkpoints", "/app/ComfyUI/models/loras", "/app/ComfyUI/output", "/app/ComfyUI/user"]
 
 # Expose proxy port (ComfyUI 8188 is strictly internal 127.0.0.1)
 EXPOSE 8190

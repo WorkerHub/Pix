@@ -2,7 +2,7 @@ import { useTranslation } from "react-i18next"
 import { genImageUrl } from "@/lib/api"
 import {
   modelLabelKey,
-  type GenerateModel,
+  type GenerationModel,
   type GenerateSize
 } from "@/lib/api-types"
 import { sndClick } from "@/lib/arcade-audio"
@@ -14,7 +14,7 @@ export interface LootItem {
   score: number
   elapsed: number
   size: GenerateSize
-  model?: GenerateModel
+  model?: GenerationModel
   createdAt: number
 }
 

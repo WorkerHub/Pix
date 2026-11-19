@@ -3,7 +3,7 @@ import { useTranslation } from "react-i18next"
 import { genImageUrl } from "@/lib/api"
 import {
   modelLabelKey,
-  type GenerateModel,
+  type GenerationModel,
   type GenerateSize
 } from "@/lib/api-types"
 import {
@@ -20,7 +20,7 @@ export interface ArcadeScreenProps {
   jobId: string | null
   prompt: string
   size: GenerateSize
-  model?: GenerateModel
+  model?: GenerationModel
   submittedAt: number | null
   elapsed: number
   errorMessage: string | null
