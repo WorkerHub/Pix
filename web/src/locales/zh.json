@@ -193,6 +193,25 @@
     },
     "logout": "退出登录"
   },
+  "generate": {
+    "title": "生图",
+    "prompt": "提示词",
+    "size": "尺寸",
+    "sizePortrait": "竖图",
+    "sizeSquare": "方图",
+    "submit": "生成",
+    "submitting": "提交中…",
+    "generating": "生成中",
+    "elapsed": "已等 {{seconds}} 秒",
+    "offline": "机器离线",
+    "recheck": "重新检查",
+    "starting": "机器启动中",
+    "busy": "机器忙碌",
+    "error": "生成失败",
+    "timeout": "生成超时",
+    "recheckOnce": "再查一次",
+    "regenerate": "重新生成"
+  },
   "settings": {
     "title": "设置",
     "tabs": {

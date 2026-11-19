@@ -193,6 +193,25 @@
     },
     "logout": "Sign out"
   },
+  "generate": {
+    "title": "Generate",
+    "prompt": "Prompt",
+    "size": "Size",
+    "sizePortrait": "Portrait",
+    "sizeSquare": "Square",
+    "submit": "Generate",
+    "submitting": "Submitting…",
+    "generating": "Generating",
+    "elapsed": "{{seconds}}s elapsed",
+    "offline": "Machine offline",
+    "recheck": "Recheck",
+    "starting": "Machine starting",
+    "busy": "Machine busy",
+    "error": "Generation failed",
+    "timeout": "Generation timed out",
+    "recheckOnce": "Check again",
+    "regenerate": "Regenerate"
+  },
   "settings": {
     "title": "Settings",
     "tabs": {
