@@ -22,6 +22,16 @@ export interface Env {
   /** 构建期注入的版本号（§6.3），只经 /api/public 暴露；不写死在前端。 */
   APP_VERSION?: string
   /**
+   * 机器侧接线值（Worker secret）：private 发布基地址。
+   * 含平台令牌的完整接入形式以用户侧上机实测为准，代码只在此基地址后拼 §4.4 路径。
+   */
+  PIX_SERVER_URL?: string
+  /**
+   * 机器侧代理鉴权共享密钥（Worker secret）：与机器 .env 同值。
+   * 请求机器时在请求头带代理鉴权密钥（见 MACHINE_AUTH_HEADER）。
+   */
+  PIX_SERVER_SECRET?: string
+  /**
    * 表前缀三态，解析见 src/lib/table-prefix.ts 的 getTablePrefix()：
    * 未设置 → 项目默认前缀（见 src/config/defaults.json，补尾 "_"）；自定义值 → 补尾 "_"；"" → 无前缀。
    * 部署期由 scripts/materialize-secrets.mjs 注入，不在仓库里写死。

@@ -29,6 +29,9 @@ export const PROJECT_SLUG = "pix"
  */
 export const DEFAULT_TABLE_PREFIX: string = defaults.defaultTablePrefix
 
+/** 机器侧代理鉴权请求头（§4.4 契约）。 */
+export const MACHINE_AUTH_HEADER = "X-Pix-Secret"
+
 /** 一句话说明（首页与「关于」页）。 */
 export const PROJECT_TAGLINE = "AI 生图：输入提示词，生成一张图。"
 
