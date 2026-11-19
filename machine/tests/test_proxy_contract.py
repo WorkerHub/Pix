@@ -136,6 +136,10 @@ def reset_server_state(mock_comfy_server):
     mock_comfy_server.state["prompt_error"] = False
     mock_comfy_server.state["last_received_prompt"] = None
     mock_comfy_server.state["last_received_headers"] = None
+    for k in model_manager.checkpoints_ready:
+        model_manager.checkpoints_ready[k] = False
+    for k in model_manager.loras_ready:
+        model_manager.loras_ready[k] = False
     model_manager.is_ready = True
     model_manager.lora_ready = True
     tracked_jobs.clear()
@@ -321,6 +325,53 @@ def test_generate_202_square_size(client, mock_comfy_server):
     workflow = last_prompt["prompt"]
     assert workflow["4"]["inputs"]["width"] == 512
     assert workflow["4"]["inputs"]["height"] == 512
+
+
+def test_generate_400_invalid_model(client):
+    """非法的 model ID 返回 400 invalid_model"""
+    resp = client.post("/generate", json={"prompt": "cat", "model": "nonexistent"}, headers=AUTH_HEADERS)
+    assert resp.status_code == 400
+    assert resp.json() == {"error": "invalid_model"}
+
+
+def test_generate_503_model_not_ready(client):
+    """model 合法但 checkpoint 未就绪 -> 503 model_not_ready"""
+    model_manager.checkpoints_ready["majicmix"] = False
+    resp = client.post("/generate", json={"prompt": "cat", "model": "majicmix"}, headers=AUTH_HEADERS)
+    assert resp.status_code == 503
+    assert resp.json() == {"error": "model_not_ready"}
+
+
+def test_generate_202_non_lcm_model_direct_connection(client, mock_comfy_server):
+    """model=realistic（无 LCM-LoRA）时节点 1 直连 2/3/5，使用 euler_ancestral 采样参数"""
+    model_manager.checkpoints_ready["realistic_vision"] = True
+    resp = client.post("/generate", json={"prompt": "a portrait", "model": "realistic"}, headers=AUTH_HEADERS)
+    assert resp.status_code == 202
+    last_prompt = mock_comfy_server.state["last_received_prompt"]
+    workflow = last_prompt["prompt"]
+
+    # 无 LoraLoader 节点
+    assert "8" not in workflow
+
+    # clip 直接取自 CheckpointLoaderSimple
+    assert workflow["2"]["inputs"]["clip"] == ["1", 1]
+    assert workflow["3"]["inputs"]["clip"] == ["1", 1]
+    ksampler = workflow["5"]["inputs"]
+    assert ksampler["model"] == ["1", 0]
+    assert ksampler["sampler_name"] == "euler_ancestral"
+    assert ksampler["scheduler"] == "normal"
+    assert ksampler["steps"] == 20
+    assert ksampler["cfg"] == 7.0
+    assert workflow["1"]["inputs"]["ckpt_name"] == config.MODEL_NAME
+
+
+def test_generate_202_model_field_recorded_in_tracked_job(client, mock_comfy_server):
+    """tracked_jobs 记录请求的 model ID"""
+    model_manager.checkpoints_ready["dreamshaper"] = True
+    resp = client.post("/generate", json={"prompt": "cat", "model": "dreamshaper"}, headers=AUTH_HEADERS)
+    assert resp.status_code == 202
+    job_id = resp.json()["jobId"]
+    assert tracked_jobs[job_id]["model"] == "dreamshaper"
 
 
 # --------------------------------------------------------------------------

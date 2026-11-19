@@ -28,6 +28,20 @@ class MockModelDownloadHandler(http.server.BaseHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(data)
             return
+        if self.path == "/majicmix.safetensors":
+            data = b"majicmix-v7-mock-content-data"
+            self.send_response(200)
+            self.send_header("Content-Length", str(len(data)))
+            self.end_headers()
+            self.wfile.write(data)
+            return
+        if self.path == "/dreamshaper.safetensors":
+            data = b"dreamshaper-8-mock-content-data"
+            self.send_response(200)
+            self.send_header("Content-Length", str(len(data)))
+            self.end_headers()
+            self.wfile.write(data)
+            return
         self.send_response(404)
         self.end_headers()
 
@@ -114,3 +128,54 @@ async def test_model_manager_skip_download_marks_lora_ready(monkeypatch):
     success = await manager.ensure_lora()
     assert success is True
     assert manager.lora_ready is True
+
+
+@pytest.mark.anyio
+async def test_model_manager_ensure_all_models_default_ready(monkeypatch):
+    monkeypatch.setattr(config, "SKIP_MODEL_DOWNLOAD", True)
+    manager = ModelManager()
+    await manager.ensure_all_models()
+    assert manager.is_default_ready() is True
+    assert manager.is_model_ready(config.DEFAULT_MODEL_ID) is True
+    for model_id in config.MODEL_REGISTRY:
+        assert manager.is_model_ready(model_id) is True
+
+
+@pytest.mark.anyio
+async def test_model_manager_is_model_ready_requires_lora(monkeypatch):
+    monkeypatch.setattr(config, "SKIP_MODEL_DOWNLOAD", False)
+    manager = ModelManager()
+    manager.checkpoints_ready["realistic_vision"] = True
+    manager.loras_ready["lcm"] = False
+    assert manager.is_model_ready("realistic-lcm") is False
+    manager.loras_ready["lcm"] = True
+    assert manager.is_model_ready("realistic-lcm") is True
+    assert manager.is_model_ready("realistic") is True
+
+
+@pytest.mark.anyio
+async def test_model_manager_ensure_non_default_checkpoint(
+    mock_download_server, monkeypatch
+):
+    test_content = b"majicmix-v7-mock-content-data"
+    expected_sha256 = hashlib.sha256(test_content).hexdigest()
+    monkeypatch.setattr(config, "SKIP_MODEL_DOWNLOAD", False)
+
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        manager = ModelManager()
+        manager.checkpoints_dir = tmp_dir
+        monkeypatch.setitem(
+            config.CHECKPOINTS,
+            "majicmix",
+            {
+                "filename": "majicmix_test.safetensors",
+                "url": f"http://127.0.0.1:{mock_download_server.server_port}/majicmix.safetensors",
+                "sha256": expected_sha256,
+            },
+        )
+        success = await manager.ensure_checkpoint("majicmix")
+        assert success is True
+        assert manager.checkpoints_ready["majicmix"] is True
+        target_path = os.path.join(tmp_dir, "majicmix_test.safetensors")
+        assert os.path.isfile(target_path)
+
