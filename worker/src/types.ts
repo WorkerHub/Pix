@@ -26,6 +26,11 @@ export interface Env {
   /** 构建期注入的版本号（§6.3），只经 /api/public 暴露；不写死在前端。 */
   APP_VERSION?: string
   /**
+   * 默认生图模型（非机密，走 [vars] 静态配置或环境变量注入；未配置时回退到 realistic-lcm）。
+   * 允许值：realistic-lcm / realistic / majicmix / dreamshaper / counterfeit。
+   */
+  DEFAULT_MODEL?: string
+  /**
    * 机器侧接线值（Worker secret）：private 发布基地址。
    * 含平台令牌的完整接入形式以用户侧上机实测为准，代码只在此基地址后拼 §4.4 路径。
    */
