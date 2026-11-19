@@ -1,50 +1,65 @@
-import { AlertCircleIcon, Loader2Icon, RefreshCwIcon } from "lucide-react"
 import { useCallback, useEffect, useRef, useState } from "react"
 import { useTranslation } from "react-i18next"
-import { Button } from "@/components/ui/button"
-import { Label } from "@/components/ui/label"
-import { Textarea } from "@/components/ui/textarea"
-import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group"
-import { ApiError, genApi, genImageUrl } from "@/lib/api"
+import { ApiError, genApi } from "@/lib/api"
 import { describeApiError } from "@/lib/api-errors"
-import type { GenerateSize } from "@/lib/api-types"
+import {
+  DEFAULT_MODEL,
+  type GenerationModel,
+  type GenerateSize
+} from "@/lib/api-types"
 import {
   clearStoredJob,
   elapsedSeconds,
   GEN_POLL_INTERVAL_MS,
   isTimedOut,
   readStoredJob,
-  writeStoredJob
+  writeStoredJob,
+  type GenPhase
 } from "@/lib/gen"
-import { cn } from "@/lib/utils"
-
-export type GenPhase =
-  | "idle"
-  | "submitting"
-  | "generating"
-  | "done"
-  | "offline"
-  | "starting"
-  | "busy"
-  | "error"
-  | "timeout"
+import { sndDone, sndStart } from "@/lib/arcade-audio"
+import { ArcadeScreen } from "@/components/arcade/arcade-screen"
+import { ArcadeDeck } from "@/components/arcade/arcade-deck"
+import {
+  ArcadeGallery,
+  type LootItem
+} from "@/components/arcade/arcade-gallery"
+import "@/components/arcade/arcade.css"
 
 /**
- * 登录后生图页（规格 §5，单页，UI 极简）。
- * 元素仅：大提示词输入框、方图/竖图分段选择（默认 portrait）、生成按钮、下方图片输出区。
+ * 游戏厅生图控制台（Boss 战街机版）
  */
 export function WorkbenchPage() {
   const { t } = useTranslation()
   const [prompt, setPrompt] = useState("")
   const [size, setSize] = useState<GenerateSize>("portrait")
+  const [model, setModel] = useState<GenerationModel>(DEFAULT_MODEL)
   const [phase, setPhase] = useState<GenPhase>("idle")
+  const [isGeneratingDone, setIsGeneratingDone] = useState(false)
   const [jobId, setJobId] = useState<string | null>(null)
   const [submittedAt, setSubmittedAt] = useState<number | null>(null)
   const [elapsed, setElapsed] = useState(0)
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
 
+  // 街机战况状态
+  const [score, setScore] = useState(0)
+  const [joyVec, setJoyVec] = useState({ x: 0, y: 0 })
+  const [attackTrigger, setAttackTrigger] = useState(0)
+  const [lootList, setLootList] = useState<LootItem[]>([])
+  const [toastMessage, setToastMessage] = useState<string | null>(null)
+  const toastTimerRef = useRef<NodeJS.Timeout | null>(null)
+
+  const showToast = useCallback((msg: string) => {
+    setToastMessage(msg)
+    if (toastTimerRef.current) clearTimeout(toastTimerRef.current)
+    toastTimerRef.current = setTimeout(() => {
+      setToastMessage(null)
+    }, 2400)
+  }, [])
+
   const phaseRef = useRef(phase)
   phaseRef.current = phase
+  const isGeneratingDoneRef = useRef(isGeneratingDone)
+  isGeneratingDoneRef.current = isGeneratingDone
   const jobIdRef = useRef(jobId)
   jobIdRef.current = jobId
   const submittedAtRef = useRef(submittedAt)
@@ -53,6 +68,13 @@ export function WorkbenchPage() {
   promptRef.current = prompt
   const sizeRef = useRef(size)
   sizeRef.current = size
+  const modelRef = useRef(model)
+  modelRef.current = model
+  const scoreRef = useRef(score)
+  scoreRef.current = score
+  const handleSubmitRef = useRef<(e?: React.FormEvent) => Promise<void>>(() =>
+    Promise.resolve()
+  )
 
   /**
    * 单次健康检查：
@@ -92,6 +114,42 @@ export function WorkbenchPage() {
     }
   }, [])
 
+  /** Boss 战爆开完成或超时降级：正式结算完成态与战利品 */
+  const handleBattleExplode = useCallback(() => {
+    setIsGeneratingDone(false)
+    setPhase("done")
+    sndDone()
+    if (jobIdRef.current) {
+      const currentJobId = jobIdRef.current
+      const timestamp = submittedAtRef.current || Date.now()
+      setLootList((prev) => {
+        if (prev.some((item) => item.jobId === currentJobId)) return prev
+        return [
+          {
+            id: currentJobId,
+            jobId: currentJobId,
+            prompt: promptRef.current,
+            score: scoreRef.current,
+            elapsed: elapsedSeconds(timestamp),
+            size: sizeRef.current,
+            model: modelRef.current,
+            createdAt: Date.now()
+          },
+          ...prev
+        ]
+      })
+    }
+  }, [])
+
+  /** 爆炸动效安全超时兜底：切后台或无 Canvas 环境 2s 内直切完成态 */
+  useEffect(() => {
+    if (!isGeneratingDone) return
+    const timer = setTimeout(() => {
+      handleBattleExplode()
+    }, 2000)
+    return () => clearTimeout(timer)
+  }, [isGeneratingDone, handleBattleExplode])
+
   /** 单次查询生图任务状态 */
   const checkJobStatus = useCallback(
     async (currentJobId: string, timestamp: number) => {
@@ -103,7 +161,7 @@ export function WorkbenchPage() {
       try {
         const res = await genApi.status(currentJobId)
         if (res.state === "done") {
-          setPhase("done")
+          setIsGeneratingDone(true)
           return
         }
         if (res.state === "error") {
@@ -134,88 +192,72 @@ export function WorkbenchPage() {
     [t]
   )
 
-  /**
-   * 页面挂载初始化：
-   * 1. 恢复本地任务（未完成继续轮询，已完成直接取图，超 12 分钟入超时态）；
-   * 2. 无本地任务时执行打开页面单次健康检查。
-   */
+  /** 挂载：初始化与恢复 localStorage 任务 */
   useEffect(() => {
     const stored = readStoredJob()
+
     if (stored) {
       setJobId(stored.jobId)
-      setSize(stored.size)
-      if (stored.prompt) setPrompt(stored.prompt)
       setSubmittedAt(stored.submittedAt)
-      const sec = elapsedSeconds(stored.submittedAt)
-      setElapsed(sec)
+      if (stored.prompt) setPrompt(stored.prompt)
+      setSize(stored.size)
+      if (stored.model) {
+        setModel(stored.model)
+      }
+      setElapsed(elapsedSeconds(stored.submittedAt))
 
       if (isTimedOut(stored.submittedAt)) {
         setPhase("timeout")
-      } else {
-        setPhase("generating")
-        void checkJobStatus(stored.jobId, stored.submittedAt)
+        return
       }
+
+      setPhase("generating")
+      void checkJobStatus(stored.jobId, stored.submittedAt)
     } else {
       void checkHealth()
     }
   }, [checkHealth, checkJobStatus])
 
-  /**
-   * 任务轮询与秒数递增计时：
-   * - 仅在 generating 态激活；
-   * - 每秒递增已等秒数，达 12 分钟进入超时态；
-   * - 每 5 秒轮询一次状态；页面不可见时跳过。
-   */
+  /** 轮询与计时器 */
   useEffect(() => {
-    if (phase !== "generating" || !jobId || !submittedAt) {
+    if (phase !== "generating" || !submittedAt || !jobId) {
       return
     }
 
     const timerInterval = setInterval(() => {
       const sec = elapsedSeconds(submittedAt)
       setElapsed(sec)
+
       if (isTimedOut(submittedAt)) {
         setPhase("timeout")
       }
     }, 1000)
 
     const pollInterval = setInterval(() => {
-      if (
-        typeof document !== "undefined" &&
-        document.visibilityState !== "visible"
-      ) {
-        return
+      if (!isGeneratingDoneRef.current) {
+        void checkJobStatus(jobId, submittedAt)
       }
-      void checkJobStatus(jobId, submittedAt)
     }, GEN_POLL_INTERVAL_MS)
 
     return () => {
       clearInterval(timerInterval)
       clearInterval(pollInterval)
     }
-  }, [phase, jobId, submittedAt, checkJobStatus])
+  }, [phase, submittedAt, jobId, checkJobStatus])
 
-  /**
-   * 前后台切换监听：
-   * - 切回前台单次健康检查；
-   * - 若有进行中的生图任务，切回前台立即补查一次。
-   */
+  /** 前后台切换处理 */
   useEffect(() => {
     const handleVisibilityChange = () => {
       if (document.visibilityState === "visible") {
-        void checkHealth()
-
+        if (phaseRef.current !== "done") {
+          void checkHealth()
+        }
         if (
           phaseRef.current === "generating" &&
           jobIdRef.current &&
           submittedAtRef.current
         ) {
-          if (isTimedOut(submittedAtRef.current)) {
-            setPhase("timeout")
-          } else {
-            setElapsed(elapsedSeconds(submittedAtRef.current))
-            void checkJobStatus(jobIdRef.current, submittedAtRef.current)
-          }
+          void checkJobStatus(jobIdRef.current, submittedAtRef.current)
         }
       }
     }
@@ -226,6 +268,97 @@ export function WorkbenchPage() {
     }
   }, [checkHealth, checkJobStatus])
 
+  /** 键盘控制与输入隔离 */
+  useEffect(() => {
+    const keysDown: Record<string, boolean> = {}
+
+    const focusInPrompt = () => {
+      const a = document.activeElement
+      return (
+        a?.id === "gen-prompt" ||
+        a?.tagName === "TEXTAREA" ||
+        a?.tagName === "INPUT"
+      )
+    }
+
+    const updateJoyFromKeys = () => {
+      let x = 0
+      let y = 0
+      if (keysDown.ArrowLeft || keysDown.KeyA) x -= 1
+      if (keysDown.ArrowRight || keysDown.KeyD) x += 1
+      if (keysDown.ArrowUp || keysDown.KeyW) y -= 1
+      if (keysDown.ArrowDown || keysDown.KeyS) y += 1
+      const m = Math.sqrt(x * x + y * y)
+      if (m > 0) {
+        setJoyVec({ x: x / m, y: y / m })
+      } else {
+        setJoyVec({ x: 0, y: 0 })
+      }
+    }
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (focusInPrompt()) {
+        if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
+          e.preventDefault()
+          void handleSubmitRef.current()
+        }
+        return
+      }
+
+      if (
+        phaseRef.current === "generating" ||
+        phaseRef.current === "submitting"
+      ) {
+        if (
+          [
+            "ArrowLeft",
+            "ArrowRight",
+            "ArrowUp",
+            "ArrowDown",
+            "KeyA",
+            "KeyD",
+            "KeyW",
+            "KeyS"
+          ].includes(e.code)
+        ) {
+          keysDown[e.code] = true
+          if (e.code.startsWith("Arrow")) e.preventDefault()
+          updateJoyFromKeys()
+        }
+        if (e.code === "Space" || e.code === "KeyJ") {
+          e.preventDefault()
+          setAttackTrigger((prev) => prev + 1)
+        }
+      } else if (e.key === "Enter") {
+        const a = document.activeElement
+        if (a?.tagName === "BUTTON") return
+        e.preventDefault()
+        void handleSubmitRef.current()
+      }
+    }
+
+    const handleKeyUp = (e: KeyboardEvent) => {
+      keysDown[e.code] = false
+      updateJoyFromKeys()
+    }
+
+    const handleBlur = () => {
+      for (const k of Object.keys(keysDown)) {
+        keysDown[k] = false
+      }
+      setJoyVec({ x: 0, y: 0 })
+    }
+
+    window.addEventListener("keydown", handleKeyDown)
+    window.addEventListener("keyup", handleKeyUp)
+    window.addEventListener("blur", handleBlur)
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown)
+      window.removeEventListener("keyup", handleKeyUp)
+      window.removeEventListener("blur", handleBlur)
+    }
+  }, [])
+
   /** 提交生图 */
   const handleSubmit = async (e?: React.FormEvent) => {
     if (e) e.preventDefault()
@@ -234,16 +367,20 @@ export function WorkbenchPage() {
       !trimmed ||
       phase === "submitting" ||
       phase === "generating" ||
+      isGeneratingDone ||
       phase === "offline"
     ) {
       return
     }
 
+    setIsGeneratingDone(false)
     setPhase("submitting")
     setErrorMessage(null)
+    setScore(0)
+    sndStart()
 
     try {
-      const res = await genApi.submit({ prompt: trimmed, size })
+      const res = await genApi.submit({ prompt: trimmed, size, model })
 
       if ("jobId" in res && res.jobId) {
         const now = Date.now()
@@ -251,6 +388,7 @@ export function WorkbenchPage() {
           jobId: res.jobId,
           prompt: trimmed,
           size,
+          model,
           submittedAt: now
         }
         writeStoredJob(newJob)
@@ -287,6 +425,7 @@ export function WorkbenchPage() {
       setErrorMessage(describeApiError(t, err))
     }
   }
+  handleSubmitRef.current = handleSubmit
 
   /** 离线态或启动态「重新检查」按钮点击 */
   const handleRecheckHealth = async () => {
@@ -318,7 +457,7 @@ export function WorkbenchPage() {
     try {
       const res = await genApi.status(jobId)
       if (res.state === "done") {
-        setPhase("done")
+        handleBattleExplode()
         return
       }
       if (res.state === "error") {
@@ -327,7 +466,6 @@ export function WorkbenchPage() {
         clearStoredJob()
         return
       }
-      // running 或 queued 仍停留在超时态待用户决定
     } catch (err) {
       if (err instanceof ApiError) {
         if (err.status === 404) {
@@ -349,222 +487,158 @@ export function WorkbenchPage() {
   /** 超时态或异常态「重新生成」 */
   const handleRegenerate = () => {
     clearStoredJob()
+    setIsGeneratingDone(false)
     setJobId(null)
     setSubmittedAt(null)
     setElapsed(0)
     void handleSubmit()
   }
 
-  const isFormDisabled = phase === "submitting" || phase === "generating"
-  const isSubmitDisabled =
-    !prompt.trim() ||
-    phase === "submitting" ||
-    phase === "generating" ||
-    phase === "offline"
+  /** 回看战利品 */
+  const handleSelectLoot = (item: LootItem) => {
+    setIsGeneratingDone(false)
+    setJobId(item.jobId)
+    setPrompt(item.prompt)
+    setSize(item.size)
+    setElapsed(item.elapsed)
+    setScore(item.score)
+    setPhase("done")
+    document
+      .getElementById("cabinet")
+      ?.scrollIntoView({ behavior: "smooth", block: "start" })
+  }
 
   return (
-    <div
-      className="mx-auto flex w-full max-w-xl flex-col gap-4"
-      data-testid="workbench-page"
-    >
-      <form onSubmit={handleSubmit} className="flex flex-col gap-3">
-        <div>
-          <Label htmlFor="gen-prompt" className="sr-only">
-            {t("generate.prompt")}
-          </Label>
-          <Textarea
-            id="gen-prompt"
-            value={prompt}
-            onChange={(e) => setPrompt(e.target.value)}
-            onKeyDown={(e) => {
-              if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
-                e.preventDefault()
-                void handleSubmit()
-              }
-            }}
-            placeholder={t("generate.prompt")}
-            rows={3}
-            disabled={isFormDisabled}
-            className="resize-none"
+    <div className="arcade-room" data-testid="workbench-page">
+      <div className="stars arcade-stars" aria-hidden="true" />
+
+      {/* 街机柜机 */}
+      <div className="cabinet" id="cabinet">
+        <div className="screw tl" aria-hidden="true" />
+        <div className="screw tr" aria-hidden="true" />
+        <div className="screw bl" aria-hidden="true" />
+        <div className="screw br" aria-hidden="true" />
+
+        {/* 顶部跑马灯 */}
+        <header className="marquee">
+          <div className="bulbs" aria-hidden="true">
+            <i />
+            <i />
+            <i />
+            <i />
+            <i />
+            <i />
+            <i />
+            <i />
+            <i />
+            <i />
+            <i />
+            <i />
+          </div>
+          <h1>
+            PIX <span className="glow">{t("arcade.marquee.title")}</span>
+          </h1>
+          <div className="sub">
+            <b>{t("arcade.marquee.sub1")}</b> · {t("arcade.marquee.sub2")}
+          </div>
+        </header>
+
+        {/* 屏幕 */}
+        <ArcadeScreen
+          phase={phase}
+          jobId={jobId}
+          prompt={prompt}
+          size={size}
+          model={model}
+          submittedAt={submittedAt}
+          elapsed={elapsed}
+          errorMessage={errorMessage}
+          score={score}
+          joyVec={joyVec}
+          attackTrigger={attackTrigger}
+          isDone={isGeneratingDone}
+          onScoreUpdate={(s) => setScore(s)}
+          onBattleExplode={handleBattleExplode}
+          onAgain={() => {
+            setIsGeneratingDone(false)
+            setPhase("idle")
+          }}
+          onRecheckHealth={() => void handleRecheckHealth()}
+          onCheckOnce={() => void handleCheckOnce()}
+          onRegenerate={handleRegenerate}
+        />
+
+        {/* 操控台 */}
+        <form onSubmit={handleSubmit}>
+          <ArcadeDeck
+            prompt={prompt}
+            size={size}
+            model={model}
+            phase={phase}
+            onPromptChange={setPrompt}
+            onSizeChange={setSize}
+            onModelChange={setModel}
+            onSubmit={() => void handleSubmit()}
+            onJoyMove={(v) => setJoyVec(v)}
+            onJoyEnd={() => setJoyVec({ x: 0, y: 0 })}
+            onAttack={() => setAttackTrigger((prev) => prev + 1)}
+            onToast={showToast}
           />
-        </div>
+        </form>
 
-        <div className="flex items-center justify-between gap-3">
-          <ToggleGroup
-            type="single"
-            value={size}
-            onValueChange={(val) => {
-              if (val === "portrait" || val === "square") {
-                setSize(val)
-              }
-            }}
-            aria-label={t("generate.size")}
-            disabled={isFormDisabled}
-          >
-            <ToggleGroupItem value="portrait" size="sm">
-              {t("generate.sizePortrait")}
-            </ToggleGroupItem>
-            <ToggleGroupItem value="square" size="sm">
-              {t("generate.sizeSquare")}
-            </ToggleGroupItem>
-          </ToggleGroup>
-
-          <Button type="submit" disabled={isSubmitDisabled}>
-            {phase === "submitting"
-              ? t("generate.submitting")
-              : t("generate.submit")}
-          </Button>
-        </div>
-      </form>
-
-      {/* 图片输出区：按所选尺寸固定长宽比占位（竖图 2:3，方图 1:1），图未到不跳版 */}
-      <div
-        data-testid="gen-output"
-        className={cn(
-          "relative flex w-full items-center justify-center overflow-hidden rounded-xl border bg-muted/20 transition-all",
-          size === "square" ? "aspect-square" : "aspect-[2/3]"
-        )}
-      >
-        {phase === "done" && jobId ? (
-          <img
-            src={genImageUrl(jobId)}
-            alt={prompt || t("generate.title")}
-            className="h-full w-full object-contain"
-          />
-        ) : null}
-
-        {phase === "generating" ? (
-          <div className="flex flex-col items-center justify-center gap-2 p-4 text-center">
-            <Loader2Icon
-              className="size-8 animate-spin text-muted-foreground"
-              aria-hidden="true"
-            />
-            <p className="text-sm font-medium">{t("generate.generating")}</p>
-            <p className="font-mono text-xs text-muted-foreground">
-              {t("generate.elapsed", { seconds: elapsed })}
-            </p>
-          </div>
-        ) : null}
-
-        {phase === "submitting" ? (
-          <div className="flex flex-col items-center justify-center gap-2 p-4 text-center">
-            <Loader2Icon
-              className="size-8 animate-spin text-muted-foreground"
-              aria-hidden="true"
-            />
-            <p className="text-sm font-medium">{t("generate.submitting")}</p>
-          </div>
-        ) : null}
-
-        {phase === "offline" ? (
-          <div
-            role="alert"
-            className="flex flex-col items-center justify-center gap-3 p-4 text-center"
-          >
-            <AlertCircleIcon
-              className="size-8 text-destructive"
-              aria-hidden="true"
-            />
-            <p className="text-sm font-medium text-destructive">
-              {t("generate.offline")}
-            </p>
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={() => void handleRecheckHealth()}
-            >
-              <RefreshCwIcon className="size-3.5" aria-hidden="true" />
-              {t("generate.recheck")}
-            </Button>
-          </div>
-        ) : null}
-
-        {phase === "starting" ? (
-          <div
-            role="status"
-            className="flex flex-col items-center justify-center gap-3 p-4 text-center"
-          >
-            <Loader2Icon
-              className="size-8 animate-spin text-muted-foreground"
-              aria-hidden="true"
-            />
-            <p className="text-sm font-medium">{t("generate.starting")}</p>
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={() => void handleRecheckHealth()}
-            >
-              <RefreshCwIcon className="size-3.5" aria-hidden="true" />
-              {t("generate.recheck")}
-            </Button>
-          </div>
-        ) : null}
-
-        {phase === "busy" ? (
-          <div
-            role="status"
-            className="flex flex-col items-center justify-center gap-3 p-4 text-center"
-          >
-            <AlertCircleIcon
-              className="size-8 text-muted-foreground"
-              aria-hidden="true"
-            />
-            <p className="text-sm font-medium">{t("generate.busy")}</p>
-            <Button type="button" size="sm" onClick={() => void handleSubmit()}>
-              {t("generate.regenerate")}
-            </Button>
-          </div>
-        ) : null}
-
-        {phase === "error" ? (
-          <div
-            role="alert"
-            className="flex flex-col items-center justify-center gap-3 p-4 text-center"
-          >
-            <AlertCircleIcon
-              className="size-8 text-destructive"
-              aria-hidden="true"
-            />
-            <p className="text-sm font-medium text-destructive">
-              {errorMessage || t("generate.error")}
-            </p>
-            <Button type="button" size="sm" onClick={() => void handleSubmit()}>
-              {t("generate.regenerate")}
-            </Button>
-          </div>
-        ) : null}
-
-        {phase === "timeout" ? (
-          <div
-            role="alert"
-            className="flex flex-col items-center justify-center gap-3 p-4 text-center"
-          >
-            <AlertCircleIcon
-              className="size-8 text-muted-foreground"
-              aria-hidden="true"
-            />
-            <p className="text-sm font-medium">{t("generate.timeout")}</p>
-            <div className="flex items-center gap-2">
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={() => void handleCheckOnce()}
-              >
-                {t("generate.recheckOnce")}
-              </Button>
-              <Button type="button" size="sm" onClick={handleRegenerate}>
-                {t("generate.regenerate")}
-              </Button>
+        {/* 底座 */}
+        <div className="cabinet-base">
+          <div className="coin-slot" aria-hidden="true">
+            <div className="slot" />
+            <div className="txt">
+              INSERT COIN
+              <br />
+              <small>{t("arcade.coin.small")}</small>
             </div>
           </div>
-        ) : null}
+          <div className="speaker" aria-hidden="true">
+            <i />
+            <i />
+            <i />
+            <i />
+            <i />
+            <i />
+            <i />
+            <i />
+            <i />
+            <i />
+            <i />
+            <i />
+            <i />
+            <i />
+            <i />
+            <i />
+            <i />
+            <i />
+            <i />
+            <i />
+            <i />
+            <i />
+            <i />
+            <i />
+            <i />
+            <i />
+            <i />
+          </div>
+        </div>
+      </div>
 
-        {phase === "idle" ? (
-          <div className="text-muted-foreground/30" aria-hidden="true" />
-        ) : null}
+      {/* 战利品展示柜 */}
+      <ArcadeGallery items={lootList} onSelect={handleSelectLoot} />
+
+      {/* 提示弹泡 */}
+      <div
+        className={`arcade-toast ${toastMessage ? "show" : ""}`}
+        role={toastMessage ? "status" : undefined}
+        aria-live="polite"
+        aria-atomic="true"
+      >
+        {toastMessage}
       </div>
     </div>
   )

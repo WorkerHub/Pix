@@ -1,4 +1,20 @@
-import type { GenerateSize } from "@/lib/api-types"
+import {
+  type GenerationModel,
+  type GenerateSize,
+  MODEL_OPTIONS
+} from "@/lib/api-types"
+
+/** 前端生图页状态机阶段（纯展示层，不涉及后端契约） */
+export type GenPhase =
+  | "idle"
+  | "submitting"
+  | "generating"
+  | "done"
+  | "offline"
+  | "starting"
+  | "busy"
+  | "error"
+  | "timeout"
 
 /** 轮询间隔：5 秒 */
 export const GEN_POLL_INTERVAL_MS = 5000
@@ -13,6 +29,7 @@ export interface StoredJob {
   jobId: string
   prompt?: string
   size: GenerateSize
+  model?: GenerationModel
   submittedAt: number
 }
 
@@ -33,6 +50,11 @@ export function readStoredJob(): StoredJob | null {
         jobId: parsed.jobId,
         prompt: typeof parsed.prompt === "string" ? parsed.prompt : "",
         size: parsed.size,
+        model:
+          typeof parsed.model === "string" &&
+          MODEL_OPTIONS.includes(parsed.model as GenerationModel)
+            ? (parsed.model as GenerationModel)
+            : undefined,
         submittedAt: parsed.submittedAt
       }
     }

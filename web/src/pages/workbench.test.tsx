@@ -133,7 +133,8 @@ describe("生图页（规格 §5，单页，UI 极简）", () => {
     await waitFor(() => {
       expect(genApi.submit).toHaveBeenCalledWith({
         prompt: "赛博朋克城市",
-        size: "portrait"
+        size: "portrait",
+        model: "realistic"
       })
     })
 
@@ -169,6 +170,7 @@ describe("生图页（规格 §5，单页，UI 极简）", () => {
 
     await waitFor(() => {
       expect(screen.getByText("生成中")).toBeInTheDocument()
+      expect(localStorage.getItem(GEN_JOB_STORAGE_KEY)).not.toBeNull()
     })
 
     // 推进 5 秒触发轮询
@@ -201,6 +203,7 @@ describe("生图页（规格 §5，单页，UI 极简）", () => {
 
     await waitFor(() => {
       expect(screen.getByText("生成中")).toBeInTheDocument()
+      expect(localStorage.getItem(GEN_JOB_STORAGE_KEY)).not.toBeNull()
     })
 
     await act(async () => {
@@ -441,6 +444,7 @@ describe("生图页（规格 §5，单页，UI 极简）", () => {
 
     await waitFor(() => {
       expect(screen.getByText("生成中")).toBeInTheDocument()
+      expect(localStorage.getItem(GEN_JOB_STORAGE_KEY)).not.toBeNull()
     })
 
     await act(async () => {
@@ -465,5 +469,31 @@ describe("生图页（规格 §5，单页，UI 极简）", () => {
     expect(screen.getByRole("radio", { name: "Portrait" })).toBeInTheDocument()
     expect(screen.getByRole("radio", { name: "Square" })).toBeInTheDocument()
     expect(screen.getByRole("button", { name: "Generate" })).toBeInTheDocument()
+  })
+
+  it("模型选择器：默认选中 realistic，点击切换并随提交发送", async () => {
+    vi.mocked(genApi.submit).mockResolvedValue({ jobId: "job-model-1" })
+    renderPage()
+
+    const realisticItem = screen.getByRole("radio", { name: "写实·原版" })
+    const counterfeitItem = screen.getByRole("radio", { name: "动漫" })
+    expect(realisticItem).toHaveAttribute("data-state", "on")
+    expect(counterfeitItem).toHaveAttribute("data-state", "off")
+
+    fireEvent.click(counterfeitItem)
+    expect(counterfeitItem).toHaveAttribute("data-state", "on")
+    expect(realisticItem).toHaveAttribute("data-state", "off")
+
+    const textarea = screen.getByPlaceholderText("提示词")
+    fireEvent.change(textarea, { target: { value: "二次元美少女" } })
+    fireEvent.click(screen.getByRole("button", { name: "生成" }))
+
+    await waitFor(() => {
+      expect(genApi.submit).toHaveBeenCalledWith({
+        prompt: "二次元美少女",
+        size: "portrait",
+        model: "counterfeit"
+      })
+    })
   })
 })
