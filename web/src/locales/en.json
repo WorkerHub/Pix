@@ -199,6 +199,13 @@
     "size": "Size",
     "sizePortrait": "Portrait",
     "sizeSquare": "Square",
+    "model": {
+      "realistic-lcm": "Realistic Turbo",
+      "realistic": "Realistic",
+      "majicmix": "Portrait East",
+      "dreamshaper": "Dream",
+      "counterfeit": "Anime"
+    },
     "submit": "Generate",
     "submitting": "Submitting…",
     "generating": "Generating",
@@ -212,6 +219,88 @@
     "timeout": "Generation timed out",
     "recheckOnce": "Check again",
     "regenerate": "Regenerate"
+  },
+  "arcade": {
+    "marquee": {
+      "title": "Arcade",
+      "sub1": "BOSS MODE",
+      "sub2": "play while you wait"
+    },
+    "coin": {
+      "small": "FREE PLAY · NO COIN NEEDED"
+    },
+    "idle": {
+      "aria": "Idle screen",
+      "title": "Say a word, summon the Boss!",
+      "desc": "Write a prompt below to start generating — the Boss will appear while you wait:",
+      "move": "move with the left joystick",
+      "dodge": " to dodge bullets, ",
+      "fire": "fire with the right red button",
+      "finish": " to take it down — the image is yours!",
+      "keyHint": "Keyboard works too: Arrows / WASD to move · Space / J to fire"
+    },
+    "battle": {
+      "aria": "Boss battle",
+      "canvasAria": "Arcade Boss battle canvas",
+      "hpLabel": "▼ BOSS HP · GENERATION",
+      "elapsed": "ELAPSED · BATTLE TIME"
+    },
+    "stage": {
+      "summoning": "The Boss is emerging from the pixel mist…",
+      "takingShape": "Taking shape — watch the bullets!",
+      "revealing": "Almost revealed — keep firing!",
+      "finalPhase": "One last hit — blow it up!",
+      "finishing": "Almost there…"
+    },
+    "done": {
+      "aria": "Generation complete",
+      "time": "Took",
+      "seconds": "s",
+      "score": "Battle score",
+      "loot": "loot collected",
+      "again": "↻ Play again",
+      "download": "↓ Save image"
+    },
+    "deck": {
+      "joyAria": "Joystick: drag to move the hero",
+      "joyLabel": "JOY · MOVE",
+      "joyHint1": "Drag any direction",
+      "joyHint2": "the hero follows",
+      "promptHead": "Prompt · INSERT PROMPT",
+      "sizeLabel": "SIZE",
+      "modelLabel": "MODEL",
+      "modelAria": "Model",
+      "summon": "SUMMON BOSS",
+      "attack": "Attack",
+      "attackAria": "Attack button",
+      "diceAria": "Random prompt",
+      "diceTitle": "Random prompt",
+      "soundAria": "Toggle sound",
+      "soundTitle": "Sound toggle",
+      "caption1": "Dice: random prompt",
+      "caption2": "Speaker: 8-bit audio",
+      "toast": {
+        "dice": "Dice says: summon this Boss!",
+        "soundOn": "Sound on ♪",
+        "soundOff": "Sound muted",
+        "empty": "Type a prompt first, then start generating!"
+      }
+    },
+    "gallery": {
+      "aria": "Loot gallery",
+      "title": "▸ My loot gallery",
+      "empty": "No loot yet — beat a Boss and its loot will be displayed here. Click any to review it on screen."
+    },
+    "preset": {
+      "shiba": "A sunglasses-wearing Shiba Inu surfing at the beach",
+      "castle": "A little castle floating on clouds with a rainbow bridge",
+      "catAstronaut": "An astronaut cat eating watermelon on the moon",
+      "mushroom": "Glowing mushroom houses and fireflies in the forest",
+      "giraffe": "A giraffe riding a bicycle through a sunflower field",
+      "octopus": "An octopus cafe under the sea lit by anglerfish",
+      "penguin": "A penguin family drinking hot cocoa on a snowy peak",
+      "whale": "A flying whale carrying a little island on a journey"
+    }
   },
   "settings": {
     "title": "Settings",

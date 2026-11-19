@@ -1,0 +1,1438 @@
+/* ================================================================
+   游戏厅 UI（Boss 战街机）样式表
+   真源依据：design/arcade-prototype.html
+   ================================================================ */
+
+:root {
+  --cab-red: #e8362d;
+  --cab-red-dark: #b91f18;
+  --cab-red-light: #ff6a52;
+  --yellow: #ffc61a;
+  --yellow-dark: #e89b00;
+  --teal: #17c3b2;
+  --teal-dark: #0d8f83;
+  --ink: #221d33;
+  --screen-bg: #101c2e;
+  --paper: #fff7e0;
+}
+
+/* 街机外围房间与地面透视网格 */
+.arcade-room {
+  position: relative;
+  padding: 16px 10px 36px;
+  max-width: 1040px;
+  margin: 0 auto;
+  border-radius: 28px;
+  background:
+    radial-gradient(
+      800px 420px at 50% -60px,
+      rgba(255, 198, 26, 0.14),
+      transparent 60%
+    ),
+    radial-gradient(
+      600px 450px at 8% 110%,
+      rgba(23, 195, 178, 0.1),
+      transparent 60%
+    ),
+    radial-gradient(
+      600px 450px at 95% 105%,
+      rgba(232, 54, 45, 0.1),
+      transparent 60%
+    ),
+    #17142b;
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.6);
+  color: #f5f1e6;
+  overflow: hidden;
+}
+
+.arcade-room::before {
+  content: "";
+  position: absolute;
+  inset: auto 0 0 0;
+  height: 140px;
+  pointer-events: none;
+  background:
+    repeating-linear-gradient(
+      90deg,
+      rgba(255, 255, 255, 0.045) 0 2px,
+      transparent 2px 72px
+    ),
+    repeating-linear-gradient(
+      0deg,
+      rgba(255, 255, 255, 0.05) 0 2px,
+      transparent 2px 34px
+    ),
+    linear-gradient(180deg, transparent, rgba(0, 0, 0, 0.5));
+  transform: perspective(420px) rotateX(38deg);
+  transform-origin: bottom;
+}
+
+.arcade-stars {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0.5;
+  background-image:
+    radial-gradient(2px 2px at 12% 18%, #fff 50%, transparent 51%),
+    radial-gradient(1.5px 1.5px at 82% 12%, #ffe98a 50%, transparent 51%),
+    radial-gradient(2px 2px at 64% 26%, #fff 50%, transparent 51%),
+    radial-gradient(1.5px 1.5px at 30% 8%, #9be7ff 50%, transparent 51%),
+    radial-gradient(1.5px 1.5px at 92% 34%, #fff 50%, transparent 51%),
+    radial-gradient(2px 2px at 45% 15%, #ffd1dc 50%, transparent 51%);
+}
+
+/* 红色机身柜机 */
+.cabinet {
+  position: relative;
+  background: linear-gradient(
+    180deg,
+    var(--cab-red-light) 0%,
+    var(--cab-red) 34%,
+    var(--cab-red-dark) 100%
+  );
+  border-radius: 34px 34px 26px 26px;
+  padding: 18px 18px 14px;
+  box-shadow:
+    inset 0 3px 0 rgba(255, 255, 255, 0.45),
+    inset 0 -10px 0 rgba(0, 0, 0, 0.22),
+    inset 4px 0 0 rgba(255, 255, 255, 0.12),
+    inset -4px 0 0 rgba(0, 0, 0, 0.14),
+    0 24px 50px rgba(0, 0, 0, 0.55),
+    0 6px 0 #0d0a1d;
+}
+
+/* 机身四角螺丝 */
+.screw {
+  position: absolute;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 35% 30%, #ffe9a8, #d99a16 60%, #8a5d05);
+  box-shadow:
+    inset 0 -2px 3px rgba(0, 0, 0, 0.4),
+    0 1px 2px rgba(0, 0, 0, 0.35);
+  z-index: 10;
+}
+.screw::before,
+.screw::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  background: #7a5204;
+  border-radius: 2px;
+}
+.screw::before {
+  width: 10px;
+  height: 2.4px;
+  transform: translate(-50%, -50%) rotate(38deg);
+}
+.screw::after {
+  width: 2.4px;
+  height: 10px;
+  transform: translate(-50%, -50%) rotate(38deg);
+}
+.screw.tl {
+  top: 12px;
+  left: 12px;
+}
+.screw.tr {
+  top: 12px;
+  right: 12px;
+}
+.screw.bl {
+  bottom: 12px;
+  left: 12px;
+}
+.screw.br {
+  bottom: 12px;
+  right: 12px;
+}
+
+/* 顶部跑马灯灯牌 */
+.marquee {
+  position: relative;
+  background: linear-gradient(180deg, #fff3c4, #ffd94d 55%, #ffb52e);
+  border: 5px solid #8f1d15;
+  border-radius: 20px;
+  padding: 14px 16px 12px;
+  text-align: center;
+  box-shadow:
+    inset 0 3px 0 rgba(255, 255, 255, 0.8),
+    inset 0 -6px 0 rgba(160, 80, 0, 0.25),
+    0 4px 0 rgba(0, 0, 0, 0.25);
+  overflow: hidden;
+  user-select: none;
+}
+
+.bulbs {
+  position: absolute;
+  inset: 6px;
+  display: flex;
+  justify-content: space-between;
+  pointer-events: none;
+}
+.bulbs i {
+  width: 11px;
+  height: 11px;
+  border-radius: 50%;
+  background: #fff8d6;
+  box-shadow: 0 0 10px 3px rgba(255, 240, 170, 0.9);
+  animation: bulb 1s steps(1) infinite;
+}
+.bulbs i:nth-child(even) {
+  animation-delay: 0.5s;
+}
+@keyframes bulb {
+  0%,
+  49% {
+    opacity: 1;
+  }
+  50%,
+  100% {
+    opacity: 0.25;
+    box-shadow: none;
+  }
+}
+
+.marquee h1 {
+  margin: 2px 0 0;
+  font-family: "Press Start 2P", monospace;
+  font-size: clamp(19px, 4.6vw, 34px);
+  color: #e8362d;
+  letter-spacing: 1px;
+  text-shadow:
+    2px 2px 0 #7c150e,
+    -1px -1px 0 #fff;
+}
+.marquee h1 .glow {
+  color: #0d8f83;
+  text-shadow:
+    2px 2px 0 #063f39,
+    -1px -1px 0 #fff;
+}
+.marquee .sub {
+  font-family: "ZCOOL KuaiLe", "Noto Sans SC", sans-serif;
+  font-size: clamp(16px, 3.4vw, 23px);
+  color: #5b2d0c;
+  margin-top: 6px;
+  letter-spacing: 6px;
+}
+.marquee .sub b {
+  color: #c22525;
+}
+
+/* CRT 屏幕外框与屏幕本体 */
+.bezel {
+  margin-top: 16px;
+  background: linear-gradient(180deg, #3a3550, #241f3d);
+  border-radius: 26px;
+  padding: 16px 16px 10px;
+  box-shadow:
+    inset 0 3px 8px rgba(0, 0, 0, 0.8),
+    inset 0 -2px 0 rgba(255, 255, 255, 0.12),
+    0 3px 0 rgba(255, 255, 255, 0.18);
+}
+
+.screen {
+  position: relative;
+  border-radius: 22px;
+  background: var(--screen-bg);
+  overflow: hidden;
+  box-shadow:
+    inset 0 0 60px rgba(0, 0, 0, 0.75),
+    inset 0 0 14px rgba(0, 0, 0, 0.9);
+  min-height: 380px;
+  display: flex;
+  flex-direction: column;
+}
+
+/* 扫描线与眩光暗角 */
+.screen::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 6;
+  pointer-events: none;
+  background: repeating-linear-gradient(
+    0deg,
+    rgba(0, 0, 0, 0.16) 0 2px,
+    transparent 2px 5px
+  );
+  mix-blend-mode: multiply;
+}
+.screen::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 7;
+  pointer-events: none;
+  background:
+    radial-gradient(
+      120% 90% at 50% 42%,
+      transparent 55%,
+      rgba(0, 0, 0, 0.5) 100%
+    ),
+    linear-gradient(
+      115deg,
+      rgba(255, 255, 255, 0.14) 0%,
+      rgba(255, 255, 255, 0.03) 26%,
+      transparent 42%
+    );
+}
+
+.screen.flicker {
+  animation: flick 0.18s steps(2) 2;
+}
+@keyframes flick {
+  0% {
+    filter: brightness(1.5);
+  }
+  100% {
+    filter: brightness(1);
+  }
+}
+
+.screen.shakeit {
+  animation: shk 0.28s;
+}
+@keyframes shk {
+  0%,
+  100% {
+    transform: translate(0, 0);
+  }
+  25% {
+    transform: translate(-4px, 2px);
+  }
+  55% {
+    transform: translate(4px, -2px);
+  }
+  80% {
+    transform: translate(-2px, -1px);
+  }
+}
+
+/* HUD 顶部仪表条 */
+.hud {
+  position: relative;
+  z-index: 3;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 16px 8px;
+  font-family: "Press Start 2P", monospace;
+  font-size: clamp(8px, 2vw, 11px);
+  color: #8ef7e9;
+  text-shadow: 0 0 8px rgba(23, 195, 178, 0.7);
+  user-select: none;
+}
+.hud .hud-item span {
+  display: block;
+  color: #ffd94d;
+  font-size: 0.78em;
+  margin-bottom: 5px;
+  text-shadow: 0 0 8px rgba(255, 198, 26, 0.7);
+}
+.hud .hud-item {
+  text-align: center;
+}
+.hud .hud-item:first-child {
+  text-align: left;
+}
+.hud .hud-item:last-child {
+  text-align: right;
+}
+
+.hud .led {
+  display: inline-block;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: #57ff7a;
+  box-shadow: 0 0 9px #57ff7a;
+  vertical-align: -1px;
+  margin-right: 6px;
+  animation: bulb 1.6s steps(1) infinite;
+}
+.hud .led.busy {
+  background: #ff5252;
+  box-shadow: 0 0 9px #ff5252;
+}
+
+/* 屏幕底部装饰标线与电源灯 */
+.screen-foot {
+  position: relative;
+  z-index: 3;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 6px 16px 12px;
+  color: #5f7d92;
+  letter-spacing: 2px;
+  font-family: "Press Start 2P", monospace;
+  font-size: 8px;
+  user-select: none;
+}
+.power-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: #ff5252;
+  box-shadow: 0 0 10px #ff5252;
+  display: inline-block;
+  vertical-align: -1px;
+  margin-right: 7px;
+}
+
+/* 屏幕主内容视图容器 */
+.view {
+  position: relative;
+  z-index: 2;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 8px 16px 16px;
+  text-align: center;
+}
+
+/* 待机画面 */
+.mascot {
+  width: 118px;
+  height: 118px;
+  image-rendering: pixelated;
+  animation: bob 1.6s ease-in-out infinite;
+}
+@keyframes bob {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-8px);
+  }
+}
+
+.idle-title {
+  font-family: "ZCOOL KuaiLe", sans-serif;
+  font-size: clamp(24px, 5.4vw, 36px);
+  color: #fff;
+  margin: 12px 0 4px;
+  text-shadow: 3px 3px 0 #0d8f83;
+  letter-spacing: 2px;
+}
+.idle-desc {
+  color: #b9d9e8;
+  font-size: 14.5px;
+  line-height: 1.8;
+  margin: 0;
+  max-width: 440px;
+}
+.idle-desc .atk {
+  color: #ff9d94;
+}
+
+.press-start {
+  margin-top: 18px;
+  font-family: "Press Start 2P", monospace;
+  font-size: clamp(10px, 2.6vw, 14px);
+  color: #ffd94d;
+  text-shadow: 0 0 12px rgba(255, 198, 26, 0.8);
+  animation: blink 1.1s steps(1) infinite;
+}
+@keyframes blink {
+  0%,
+  49% {
+    opacity: 1;
+  }
+  50%,
+  100% {
+    opacity: 0.2;
+  }
+}
+
+.idle-hint {
+  margin-top: 12px;
+  font-size: 12.5px;
+  color: #7fa6ba;
+}
+
+/* Boss 战画面 */
+.battle-stage {
+  width: min(480px, 94%);
+}
+.battle-wrap {
+  position: relative;
+  border: 4px solid #4a2c4d;
+  border-radius: 10px;
+  overflow: hidden;
+  background: #0a1420;
+  box-shadow:
+    0 0 0 4px #0a0f1c,
+    0 0 26px rgba(232, 54, 45, 0.28);
+}
+#battleCanvas {
+  display: block;
+  width: 100%;
+  height: auto;
+  image-rendering: pixelated;
+}
+
+.battle-status {
+  margin: 14px 0 4px;
+  font-family: "ZCOOL KuaiLe", sans-serif;
+  font-size: clamp(19px, 4.4vw, 25px);
+  color: #fff;
+  letter-spacing: 1px;
+  min-height: 1.4em;
+}
+.battle-sub {
+  color: #8fb8cc;
+  margin: 0 0 12px;
+  font-family: "Press Start 2P", monospace;
+  font-size: 10px;
+  letter-spacing: 1px;
+}
+
+.bossbar-label {
+  display: flex;
+  justify-content: space-between;
+  width: min(480px, 94%);
+  font-family: "Press Start 2P", monospace;
+  font-size: 9px;
+  color: #ff9d94;
+  letter-spacing: 1px;
+  margin-bottom: 6px;
+  text-shadow: 0 0 8px rgba(232, 54, 45, 0.6);
+}
+.bossbar-label .pct {
+  color: #ffd94d;
+  text-shadow: 0 0 8px rgba(255, 198, 26, 0.6);
+}
+
+.hpbar {
+  display: flex;
+  gap: 4px;
+  justify-content: center;
+  margin: 0 auto 10px;
+  width: min(480px, 94%);
+}
+.hpbar i {
+  flex: 1;
+  height: 22px;
+  border-radius: 5px;
+  background: #22344d;
+  border: 2px solid #0a0f1c;
+  box-shadow: inset 0 2px 0 rgba(255, 255, 255, 0.12);
+  transition: background 0.15s;
+}
+.hpbar i.fill {
+  background: linear-gradient(180deg, #ff9d94, #e8362d 55%, #991b1b);
+  box-shadow:
+    inset 0 3px 0 rgba(255, 255, 255, 0.5),
+    0 0 10px rgba(232, 54, 45, 0.55);
+}
+.hpbar i.fill.low {
+  background: linear-gradient(180deg, #ffe066, #f59e0b 55%, #b45309);
+  box-shadow:
+    inset 0 3px 0 rgba(255, 255, 255, 0.5),
+    0 0 12px rgba(245, 158, 11, 0.8);
+  animation: lowhp 0.5s steps(1) infinite;
+}
+@keyframes lowhp {
+  0%,
+  49% {
+    filter: brightness(1.25);
+  }
+  50%,
+  100% {
+    filter: brightness(0.85);
+  }
+}
+
+.battle-nums {
+  display: flex;
+  justify-content: center;
+  gap: 30px;
+  flex-wrap: wrap;
+  font-family: "Press Start 2P", monospace;
+  font-size: clamp(10px, 2.6vw, 13px);
+}
+.battle-nums .elapsed {
+  color: #ffd94d;
+  text-shadow: 0 0 10px rgba(255, 198, 26, 0.6);
+}
+.battle-nums .bscore {
+  color: #7dff8a;
+  text-shadow: 0 0 10px rgba(34, 197, 94, 0.7);
+}
+.battle-nums small {
+  display: block;
+  font-size: 8px;
+  color: #7fa6ba;
+  margin-bottom: 6px;
+  text-shadow: none;
+}
+
+/* 生成完成画面 */
+.done-badge {
+  font-family: "Press Start 2P", monospace;
+  color: #7dff8a;
+  font-size: clamp(11px, 3vw, 15px);
+  text-shadow: 0 0 12px rgba(34, 197, 94, 0.8);
+  margin-bottom: 12px;
+}
+.done-frame {
+  position: relative;
+  border: 5px solid var(--yellow);
+  border-radius: 12px;
+  overflow: hidden;
+  background: #0a1420;
+  box-shadow:
+    0 0 0 4px #7a5204,
+    0 10px 30px rgba(0, 0, 0, 0.5);
+  max-width: min(440px, 92%);
+  animation: pop 0.45s cubic-bezier(0.2, 1.6, 0.4, 1);
+}
+@keyframes pop {
+  0% {
+    transform: scale(0.6);
+    opacity: 0;
+  }
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+.done-frame img,
+.done-frame canvas {
+  display: block;
+  width: 100%;
+  max-height: 520px;
+  height: auto;
+  object-fit: contain;
+}
+
+.done-prompt {
+  margin: 14px 0 2px;
+  color: #fff;
+  font-weight: 700;
+  font-size: 16px;
+  max-width: 460px;
+}
+.done-meta {
+  color: #8fb8cc;
+  margin: 0;
+  font-family: "Press Start 2P", monospace;
+  font-size: 10px;
+  line-height: 2.1;
+}
+.done-meta .gold {
+  color: #ffd94d;
+}
+
+.done-actions {
+  display: flex;
+  gap: 12px;
+  margin-top: 16px;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
+/* 按钮通用风格 */
+.btn-arcade {
+  font-family: "ZCOOL KuaiLe", "Noto Sans SC", sans-serif;
+  font-size: 17px;
+  letter-spacing: 1px;
+  border: none;
+  cursor: pointer;
+  border-radius: 999px;
+  padding: 11px 24px;
+  min-height: 46px;
+  color: #221d33;
+  background: linear-gradient(
+    180deg,
+    #ffe066,
+    var(--yellow) 60%,
+    var(--yellow-dark)
+  );
+  box-shadow:
+    0 5px 0 #8a5d05,
+    0 8px 14px rgba(0, 0, 0, 0.35),
+    inset 0 2px 0 rgba(255, 255, 255, 0.7);
+  transition:
+    transform 0.08s,
+    box-shadow 0.08s;
+  user-select: none;
+}
+.btn-arcade:active {
+  transform: translateY(4px);
+  box-shadow:
+    0 1px 0 #8a5d05,
+    0 3px 6px rgba(0, 0, 0, 0.3);
+}
+.btn-arcade.ghost {
+  background: linear-gradient(
+    180deg,
+    #a5f3ec,
+    var(--teal) 60%,
+    var(--teal-dark)
+  );
+  color: #06302b;
+  box-shadow:
+    0 5px 0 #065048,
+    0 8px 14px rgba(0, 0, 0, 0.35),
+    inset 0 2px 0 rgba(255, 255, 255, 0.7);
+}
+.btn-arcade.ghost:active {
+  box-shadow:
+    0 1px 0 #065048,
+    0 3px 6px rgba(0, 0, 0, 0.3);
+}
+
+/* 碎纸彩带 */
+.confetti {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  pointer-events: none;
+  overflow: hidden;
+}
+.confetti i {
+  position: absolute;
+  width: 9px;
+  height: 9px;
+  top: -12px;
+  animation: fall linear forwards;
+}
+@keyframes fall {
+  to {
+    transform: translateY(560px) rotate(560deg);
+    opacity: 0.2;
+  }
+}
+
+/* 异常与离线终端态 */
+.terminal-box {
+  width: min(440px, 92%);
+  border: 3px solid #ff5252;
+  border-radius: 12px;
+  background: rgba(10, 15, 28, 0.95);
+  box-shadow:
+    0 0 20px rgba(255, 82, 82, 0.4),
+    inset 0 0 12px rgba(0, 0, 0, 0.8);
+  padding: 24px 20px;
+  color: #ff9d94;
+  text-align: center;
+}
+.terminal-box.warning {
+  border-color: #ffd94d;
+  color: #ffd94d;
+  box-shadow: 0 0 20px rgba(255, 217, 77, 0.35);
+}
+.terminal-title {
+  font-family: "Press Start 2P", monospace;
+  font-size: clamp(12px, 2.8vw, 15px);
+  letter-spacing: 1px;
+  margin-bottom: 12px;
+}
+.terminal-msg {
+  font-family: "Noto Sans SC", sans-serif;
+  font-size: 14.5px;
+  line-height: 1.6;
+  color: #dbe7ef;
+  margin-bottom: 20px;
+}
+.terminal-actions {
+  display: flex;
+  gap: 12px;
+  justify-content: center;
+  flex-wrap: wrap;
+}
+
+/* ================================================================
+   操控台 DECK
+   ================================================================ */
+.deck {
+  margin-top: 16px;
+  background: linear-gradient(180deg, #ffd94d, #ffb52e 70%, #f59e0b);
+  border-radius: 22px;
+  padding: 18px;
+  box-shadow:
+    inset 0 3px 0 rgba(255, 255, 255, 0.75),
+    inset 0 -8px 0 rgba(146, 64, 14, 0.35),
+    0 4px 0 rgba(0, 0, 0, 0.25);
+  display: grid;
+  grid-template-columns: 170px 1fr 170px;
+  gap: 18px;
+  align-items: start;
+  color: var(--ink);
+}
+.deck-label {
+  font-family: "ZCOOL KuaiLe", sans-serif;
+  font-size: 15px;
+  letter-spacing: 2px;
+  color: #7c2d12;
+  text-align: center;
+  margin-top: 8px;
+}
+
+/* 摇杆（俯视模型） */
+.joy-zone {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  user-select: none;
+}
+.joy-base {
+  position: relative;
+  width: 132px;
+  height: 132px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 50% 38%, #4b4560, #241f3d 68%);
+  box-shadow:
+    inset 0 6px 14px rgba(0, 0, 0, 0.85),
+    inset 0 -3px 0 rgba(255, 255, 255, 0.15),
+    0 3px 0 rgba(255, 255, 255, 0.5);
+  touch-action: none;
+  cursor: grab;
+}
+.joy-base:active {
+  cursor: grabbing;
+}
+.joy-base::before,
+.joy-base::after {
+  content: "";
+  position: absolute;
+  background: rgba(255, 217, 77, 0.35);
+  border-radius: 2px;
+}
+.joy-base::before {
+  left: 50%;
+  top: 8px;
+  width: 3px;
+  height: 14px;
+  transform: translateX(-50%);
+}
+.joy-base::after {
+  left: 50%;
+  bottom: 8px;
+  width: 3px;
+  height: 14px;
+  transform: translateX(-50%);
+}
+
+.joy-stick {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 0;
+  height: 16px;
+  margin-top: -8px;
+  background: linear-gradient(180deg, #17141f, #4b4560 45%, #17141f);
+  border-radius: 8px;
+  transform-origin: 0 50%;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.5);
+  z-index: 1;
+  pointer-events: none;
+}
+
+.joy-ball {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 58px;
+  height: 58px;
+  transform: translate(-50%, -50%);
+  border-radius: 50%;
+  z-index: 2;
+  background: radial-gradient(
+    circle at 32% 26%,
+    #ffb3ab,
+    var(--cab-red-light) 34%,
+    var(--cab-red) 62%,
+    var(--cab-red-dark)
+  );
+  box-shadow:
+    inset 0 -8px 12px rgba(0, 0, 0, 0.35),
+    0 8px 14px rgba(0, 0, 0, 0.45);
+  pointer-events: none;
+}
+.joy-ball::after {
+  content: "";
+  position: absolute;
+  left: 11px;
+  top: 8px;
+  width: 16px;
+  height: 11px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.75);
+  transform: rotate(-24deg);
+}
+
+.joy-hint {
+  font-size: 12px;
+  color: #92400e;
+  text-align: center;
+  margin-top: 8px;
+  line-height: 1.6;
+  font-weight: 700;
+}
+
+/* 控制台 PROMPT CONSOLE */
+.console-box {
+  background: #fffdf4;
+  border: 4px solid #221d33;
+  border-radius: 16px;
+  box-shadow: 6px 6px 0 rgba(34, 29, 51, 0.9);
+  padding: 14px;
+}
+.console-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 10px;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.console-head .t {
+  font-family: "ZCOOL KuaiLe", sans-serif;
+  font-size: 19px;
+  letter-spacing: 1px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.coin {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  flex: none;
+  background: radial-gradient(
+    circle at 35% 30%,
+    #fff3b0,
+    var(--yellow) 55%,
+    var(--yellow-dark)
+  );
+  border: 2px solid #8a5d05;
+  display: inline-grid;
+  place-items: center;
+  font-family: "Press Start 2P", monospace;
+  font-size: 9px;
+  color: #7a5204;
+}
+
+#promptInput {
+  width: 100%;
+  min-height: 86px;
+  resize: vertical;
+  border: 3px solid #221d33;
+  border-radius: 12px;
+  padding: 12px 14px;
+  font-family: "Noto Sans SC", sans-serif;
+  font-size: 16.5px;
+  line-height: 1.65;
+  font-weight: 500;
+  background: #fff;
+  color: #221d33;
+  outline: none;
+}
+#promptInput:focus {
+  box-shadow: 0 0 0 4px rgba(23, 195, 178, 0.45);
+}
+#promptInput::placeholder {
+  color: #a39e8d;
+}
+
+.console-box.shake {
+  animation: shake 0.4s;
+}
+@keyframes shake {
+  0%,
+  100% {
+    transform: translateX(0);
+  }
+  20% {
+    transform: translateX(-8px);
+  }
+  40% {
+    transform: translateX(8px);
+  }
+  60% {
+    transform: translateX(-6px);
+  }
+  80% {
+    transform: translateX(6px);
+  }
+}
+
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+.chip {
+  border: 2.5px solid #221d33;
+  background: #e0f7f3;
+  color: #0b4f47;
+  font-weight: 700;
+  font-size: 13.5px;
+  border-radius: 999px;
+  padding: 8px 14px;
+  min-height: 38px;
+  cursor: pointer;
+  box-shadow: 0 3px 0 #221d33;
+  transition:
+    transform 0.08s,
+    box-shadow 0.08s;
+  user-select: none;
+}
+.chip:nth-child(2) {
+  background: #ffe9ec;
+  color: #7f1d2d;
+}
+.chip:nth-child(3) {
+  background: #e6e0ff;
+  color: #3b2a7a;
+}
+.chip:nth-child(4) {
+  background: #fff3c4;
+  color: #7a5204;
+}
+.chip:active {
+  transform: translateY(3px);
+  box-shadow: 0 0 0 #221d33;
+}
+
+.opt-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px 22px;
+  margin-top: 14px;
+  align-items: flex-end;
+}
+.opt-group .g-label {
+  font-size: 12px;
+  font-weight: 900;
+  letter-spacing: 2px;
+  color: #7c2d12;
+  margin-bottom: 7px;
+}
+
+.pill-row {
+  display: flex;
+  gap: 7px;
+  flex-wrap: wrap;
+}
+.pill {
+  border: 2.5px solid #221d33;
+  background: #fff;
+  color: #221d33;
+  font-weight: 700;
+  font-size: 13.5px;
+  border-radius: 10px;
+  padding: 7px 13px;
+  min-height: 38px;
+  cursor: pointer;
+  box-shadow: 0 3px 0 #221d33;
+  user-select: none;
+}
+.pill[data-state="on"],
+.pill[aria-pressed="true"] {
+  background: #221d33;
+  color: #ffd94d;
+}
+.pill:active {
+  transform: translateY(2px);
+  box-shadow: 0 1px 0 #221d33;
+}
+
+/* 独立生图开始入口 */
+.start-entry {
+  margin-top: 16px;
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  font-family: "ZCOOL KuaiLe", "Noto Sans SC", sans-serif;
+  font-size: 20px;
+  letter-spacing: 3px;
+  border: 3px solid #221d33;
+  border-radius: 12px;
+  padding: 13px 20px;
+  min-height: 54px;
+  cursor: pointer;
+  color: #06302b;
+  background: linear-gradient(
+    180deg,
+    #7df0e2,
+    var(--teal) 60%,
+    var(--teal-dark)
+  );
+  box-shadow: 0 5px 0 #221d33;
+  transition:
+    transform 0.08s,
+    box-shadow 0.08s;
+  user-select: none;
+}
+.start-entry small {
+  font-family: "Press Start 2P", monospace;
+  font-size: 9px;
+  letter-spacing: 1px;
+  opacity: 0.75;
+}
+.start-entry:active {
+  transform: translateY(4px);
+  box-shadow: 0 1px 0 #221d33;
+}
+.start-entry:disabled {
+  filter: grayscale(0.6) brightness(0.9);
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: 0 5px 0 #221d33;
+}
+
+/* 按钮区 BUTTONS ZONE（攻击 + 骰子 + 音效） */
+.btn-zone {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+}
+.big-attack {
+  width: 128px;
+  height: 128px;
+  border-radius: 50%;
+  border: none;
+  cursor: pointer;
+  position: relative;
+  background: radial-gradient(
+    circle at 34% 26%,
+    #ff9d94,
+    var(--cab-red) 52%,
+    var(--cab-red-dark)
+  );
+  box-shadow:
+    0 9px 0 #7c150e,
+    0 16px 26px rgba(0, 0, 0, 0.4),
+    inset 0 4px 0 rgba(255, 255, 255, 0.55),
+    inset 0 -10px 16px rgba(0, 0, 0, 0.3);
+  color: #fff;
+  font-family: "ZCOOL KuaiLe", sans-serif;
+  font-size: 26px;
+  letter-spacing: 3px;
+  text-shadow: 0 2px 0 rgba(0, 0, 0, 0.3);
+  transition:
+    transform 0.07s,
+    box-shadow 0.07s;
+  touch-action: manipulation;
+  user-select: none;
+}
+.big-attack small {
+  display: block;
+  font-family: "Press Start 2P", monospace;
+  font-size: 9px;
+  letter-spacing: 1px;
+  margin-top: 5px;
+  opacity: 0.92;
+}
+.big-attack:active,
+.big-attack.pressed {
+  transform: translateY(7px);
+  box-shadow:
+    0 2px 0 #7c150e,
+    0 6px 12px rgba(0, 0, 0, 0.35),
+    inset 0 4px 0 rgba(255, 255, 255, 0.55),
+    inset 0 -8px 14px rgba(0, 0, 0, 0.3);
+}
+
+.mini-row {
+  display: flex;
+  gap: 10px;
+}
+.mini-btn {
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  border: 3px solid #221d33;
+  cursor: pointer;
+  display: grid;
+  place-items: center;
+  color: #221d33;
+  box-shadow: 0 4px 0 #221d33;
+  transition:
+    transform 0.08s,
+    box-shadow 0.08s;
+  user-select: none;
+}
+.mini-btn:active {
+  transform: translateY(3px);
+  box-shadow: 0 1px 0 #221d33;
+}
+.mini-btn svg {
+  width: 24px;
+  height: 24px;
+}
+.mini-btn.dice {
+  background: linear-gradient(180deg, #a5f3ec, var(--teal));
+}
+.mini-btn.sound {
+  background: linear-gradient(180deg, #ffe9ec, #fda4af);
+}
+.mini-btn.sound.off {
+  background: linear-gradient(180deg, #e7e5df, #b8b2a7);
+}
+.mini-caption {
+  font-size: 11.5px;
+  font-weight: 700;
+  color: #92400e;
+  text-align: center;
+  line-height: 1.5;
+}
+
+/* ================================================================
+   底座与展示柜 BASE / GALLERY
+   ================================================================ */
+.cabinet-base {
+  margin-top: 16px;
+  display: grid;
+  grid-template-columns: 200px 1fr;
+  gap: 16px;
+  align-items: stretch;
+}
+
+.coin-slot {
+  background: linear-gradient(180deg, #3a3550, #241f3d);
+  border-radius: 16px;
+  padding: 12px 14px;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  box-shadow:
+    inset 0 2px 6px rgba(0, 0, 0, 0.8),
+    0 2px 0 rgba(255, 255, 255, 0.15);
+  user-select: none;
+}
+.slot {
+  width: 12px;
+  height: 52px;
+  border-radius: 6px;
+  background: #0a0f1c;
+  box-shadow:
+    inset 0 2px 6px #000,
+    0 0 0 3px #57506e;
+  flex: none;
+}
+.coin-slot .txt {
+  font-family: "Press Start 2P", monospace;
+  font-size: 9px;
+  color: #ffd94d;
+  line-height: 2;
+}
+.coin-slot .txt small {
+  color: #8fb8cc;
+  font-size: 8px;
+}
+
+.speaker {
+  display: grid;
+  grid-template-columns: repeat(9, 1fr);
+  gap: 7px;
+  align-content: center;
+  padding: 6px 4px;
+}
+.speaker i {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.4);
+  box-shadow:
+    inset 0 2px 3px rgba(0, 0, 0, 0.6),
+    0 1px 0 rgba(255, 255, 255, 0.25);
+  justify-self: center;
+}
+
+.gallery {
+  margin-top: 16px;
+  background: rgba(10, 8, 24, 0.55);
+  border: 3px dashed rgba(255, 217, 77, 0.5);
+  border-radius: 18px;
+  padding: 14px 16px;
+}
+.gallery h2 {
+  margin: 0 0 4px;
+  font-family: "ZCOOL KuaiLe", sans-serif;
+  font-size: 19px;
+  color: #ffd94d;
+  letter-spacing: 2px;
+  font-weight: 400;
+}
+.gallery .empty {
+  color: #9aa3c0;
+  font-size: 13.5px;
+  margin: 6px 0 2px;
+}
+.thumbs {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-top: 10px;
+}
+.thumb {
+  border: 3px solid #ffd94d;
+  border-radius: 10px;
+  overflow: hidden;
+  width: 140px;
+  cursor: pointer;
+  background: #0a1420;
+  padding: 0;
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.4);
+  transition: transform 0.08s;
+  text-align: left;
+  display: flex;
+  flex-direction: column;
+}
+.thumb:hover {
+  transform: translateY(-2px);
+}
+.thumb img {
+  display: block;
+  width: 100%;
+  height: 90px;
+  object-fit: cover;
+}
+.thumb-prompt {
+  display: block;
+  font-size: 11.5px;
+  color: #ffd94d;
+  font-weight: 700;
+  padding: 5px 7px 2px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.thumb-badges {
+  display: flex;
+  gap: 4px;
+  padding: 2px 7px;
+  flex-wrap: wrap;
+}
+.thumb-model,
+.thumb-size {
+  font-size: 10px;
+  border-radius: 4px;
+  padding: 1px 5px;
+  line-height: 1.3;
+}
+.thumb-size {
+  background: #1e293b;
+  color: #93c5fd;
+}
+.thumb-model {
+  background: #312e81;
+  color: #c7d2fe;
+}
+.thumb-footer {
+  display: flex;
+  justify-content: space-between;
+  padding: 4px 7px 6px;
+  font-size: 10px;
+  color: #94a3b8;
+}
+.thumb-id {
+  font-weight: 700;
+  color: #fbbf24;
+}
+.thumb-time {
+  color: #94a3b8;
+}
+
+/* 提示泡 TOAST */
+.arcade-toast {
+  position: fixed;
+  left: 50%;
+  bottom: 26px;
+  transform: translate(-50%, 80px);
+  z-index: 50;
+  background: #221d33;
+  color: #ffd94d;
+  border: 3px solid #ffd94d;
+  border-radius: 999px;
+  font-family: "ZCOOL KuaiLe", sans-serif;
+  font-size: 16.5px;
+  letter-spacing: 1px;
+  padding: 11px 24px;
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.5);
+  transition: transform 0.3s cubic-bezier(0.2, 1.4, 0.4, 1);
+  pointer-events: none;
+  max-width: 92vw;
+  text-align: center;
+}
+.arcade-toast.show {
+  transform: translate(-50%, 0);
+}
+
+/* ================================================================
+   响应式断点适配
+   ================================================================ */
+@media (max-width: 860px) {
+  .deck {
+    grid-template-columns: 1fr 1fr;
+  }
+  .console-box {
+    grid-column: 1 / -1;
+    order: -1;
+  }
+  .screen {
+    min-height: 340px;
+  }
+  .cabinet-base {
+    grid-template-columns: 1fr;
+  }
+  .speaker {
+    display: none;
+  }
+}
+
+@media (max-width: 480px) {
+  .arcade-room {
+    padding: 10px 4px 20px;
+  }
+  .cabinet {
+    padding: 12px 10px 10px;
+    border-radius: 26px;
+  }
+  .bezel {
+    padding: 10px 10px 6px;
+  }
+  .deck {
+    padding: 14px 12px;
+    gap: 12px;
+  }
+  .joy-base {
+    width: 112px;
+    height: 112px;
+  }
+  .big-attack {
+    width: 112px;
+    height: 112px;
+    font-size: 22px;
+  }
+  .hud {
+    padding: 10px 10px 6px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .arcade .mascot,
+  .arcade .press-start,
+  .arcade .bulbs i,
+  .arcade .hud .led,
+  .arcade .hpbar i.fill.low {
+    animation: none;
+  }
+}
