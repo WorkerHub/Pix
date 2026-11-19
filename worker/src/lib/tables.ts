@@ -25,6 +25,16 @@ export const emailCodesTable = (prefix: string) =>
 export const settingsTable = (prefix: string) =>
   tableName(prefix, "system_settings")
 /**
+ * 生图历史记录索引表（规格 §3：业务表 generations）。
+ */
+export const generationsTable = (prefix: string) =>
+  tableName(prefix, "generations")
+export const generationsJobIdIndex = (prefix: string) =>
+  indexName(prefix, "generations_job_id")
+export const generationsUserIdIndex = (prefix: string) =>
+  indexName(prefix, "generations_user_id")
+
+/**
  * 限流与连续失败锁定的计数表（规格 §5.2 表清单内的基础设施表，经裁决增列）。
  * setup 限流在迁移之前就要生效，因此 `core/counters.ts` 会用 schema.ts 的同一份
  * DDL 先把它建出来。

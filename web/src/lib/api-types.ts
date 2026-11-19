@@ -215,6 +215,13 @@ export interface AdminUserActionResult {
 
 export type GenerateSize = "portrait" | "square"
 
+export type GenerationModel =
+  | "realistic-lcm"
+  | "realistic"
+  | "majicmix"
+  | "dreamshaper"
+  | "counterfeit"
+
 /** GET /api/gen/health：机器探活。online:false 时无 ready 字段。 */
 export interface GenHealth {
   online: boolean
@@ -224,11 +231,12 @@ export interface GenHealth {
 export interface GenerateInput {
   prompt: string
   size: GenerateSize
+  model?: GenerationModel
 }
 
-/** POST /api/gen：除 400 外一律 200，前端只认形状。 */
+/** POST /api/gen：除 400 外一律 200，前端只认形状。成功时携带翻译标记与实际提交提示词。 */
 export type GenerateResult =
-  | { jobId: string }
+  | { jobId: string; translated?: boolean; effectivePrompt?: string }
   | { busy: true }
   | { ready: false }
   | { online: false }
@@ -239,4 +247,25 @@ export type JobState = "queued" | "running" | "done" | "error"
 export interface JobStatus {
   state: JobState
   error?: string
+}
+
+/** 生图历史条目 */
+export interface GenerationHistoryItem {
+  id: number
+  job_id: string
+  model: GenerationModel | string
+  prompt_original: string
+  prompt_effective: string
+  size: GenerateSize
+  created_at: string
+  imageUrl: string
+}
+
+/** GET /api/gen/history 响应 */
+export interface GenerationHistoryResult {
+  items: GenerationHistoryItem[]
+  total: number
+  page: number
+  pageSize: number
+  totalPages: number
 }

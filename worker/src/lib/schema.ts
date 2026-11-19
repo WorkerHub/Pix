@@ -145,6 +145,48 @@ export const SCHEMA_INDEXES: string[] = [
   AUTH_COUNTERS_INDEX_DDL
 ]
 
+/**
+ * 业务表：生图历史记录表（规格 §3）。
+ * 属 schema_v2 增量迁移（generationsStatements），不进 db/schema.sql 基线镜像。
+ * - id: INTEGER PRIMARY KEY AUTOINCREMENT（页面编号，全站递增，删除不复用）；
+ * - user_id: 所属用户；
+ * - job_id: 机器侧 jobId，唯一索引（写入幂等键）；
+ * - model: 所选生图模型 ID（默认 realistic-lcm）；
+ * - prompt_original: 用户输入原文；
+ * - prompt_effective: 实际提交文本（译文或原文）；
+ * - size: portrait|square；
+ * - r2_key: R2 对象键；
+ * - created_at: 创建时间 ISO 字符串。
+ */
+export const GENERATIONS_TABLE_DDL = `CREATE TABLE IF NOT EXISTS {table} (
+  id               INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id          INTEGER NOT NULL,
+  job_id           TEXT NOT NULL,
+  model            TEXT NOT NULL DEFAULT 'realistic-lcm',
+  prompt_original  TEXT NOT NULL,
+  prompt_effective TEXT NOT NULL,
+  size             TEXT NOT NULL CHECK (size IN ('portrait', 'square')),
+  r2_key           TEXT NOT NULL,
+  created_at       TEXT NOT NULL
+)`
+
+export const GENERATIONS_INDEXES: string[] = [
+  `CREATE UNIQUE INDEX IF NOT EXISTS idx_{prefix}generations_job_id
+  ON {prefix}generations(job_id)`,
+  `CREATE INDEX IF NOT EXISTS idx_{prefix}generations_user_id
+  ON {prefix}generations(user_id, id DESC)`
+]
+
+/** 业务表 generations 增量迁移的语句序列（表 + 索引）。 */
+export function generationsStatements(prefix: string): string[] {
+  const table = tableName(prefix, "generations")
+  const statements = [GENERATIONS_TABLE_DDL.replaceAll("{table}", table)]
+  for (const ddl of GENERATIONS_INDEXES) {
+    statements.push(ddl.replaceAll("{prefix}", prefix))
+  }
+  return statements
+}
+
 /** 基线迁移的完整语句序列（表 + 索引），交给执行器逐条执行。 */
 export function baselineStatements(prefix: string): string[] {
   const statements = SCHEMA_TABLES.map((table) =>
@@ -159,7 +201,8 @@ export function baselineStatements(prefix: string): string[] {
 const SCHEMA_SQL_NOTICE = `-- 本文件由 worker/src/lib/schema.ts 生成，请勿手改。
 -- 重写命令：pnpm --filter ./worker schema:sql
 -- 它是唯一基线迁移 schema_v1 的逐字镜像，worker/test/schema-sql.test.ts 断言两者完全一致。
--- 历史增量迁移链已坍缩为单一 V1，全新建表即为最终形态。
+-- 历史增量迁移链已坍缩为单一 V1，基线下全新建表即为最终形态。
+-- 注意：generations 表属 schema_v2 增量迁移，不在本基线镜像内（见下方 GENERATIONS_TABLE_DDL）。
 -- 语句之间用分号分隔，语句内部不得出现分号（迁移执行器按分号切分）。
 -- 表名/索引名里的 {prefix} 是占位符，执行时替换成生效的 TABLE_PREFIX。`
 

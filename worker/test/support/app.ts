@@ -11,6 +11,7 @@ import { sha256Hex } from "../../src/core/auth"
 import { SESSION_COOKIE } from "../../src/core/session"
 import { PROJECT_NAME } from "../../src/config/project"
 import type { Env } from "../../src/types"
+import { MockR2Bucket } from "./mock-r2"
 import { SqliteD1 } from "./sqlite-d1"
 
 export const TEST_SETUP_SECRET = "test-setup-secret"
@@ -44,6 +45,7 @@ export function makeContext(overrides: Partial<Env> = {}): TestContext {
   const env = {
     DB: db as unknown as D1Database,
     ASSETS: assets(),
+    IMAGES: new MockR2Bucket() as unknown as R2Bucket,
     SETUP_SECRET: TEST_SETUP_SECRET,
     SIGNING_SECRET: TEST_SIGNING_SECRET,
     APP_VERSION: TEST_APP_VERSION,
