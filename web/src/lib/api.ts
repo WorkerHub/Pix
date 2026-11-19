@@ -17,6 +17,10 @@ import type {
   AdminSettingsUpdate,
   AdminUser,
   AdminUserActionResult,
+  GenerateInput,
+  GenerateResult,
+  GenHealth,
+  JobStatus,
   LoginResult,
   Me,
   MeUpdateInput,
@@ -327,4 +331,24 @@ export const adminApi = {
     }),
 
   runSetup: () => request<AdminSetupResult>("/admin/setup", { method: "POST" })
+}
+
+/* 生图相关（规格 §5，单页生图契约） */
+
+export const genApi = {
+  health: () => request<GenHealth>("/gen/health"),
+
+  submit: (input: GenerateInput) =>
+    request<GenerateResult>("/gen", {
+      method: "POST",
+      body: input
+    }),
+
+  status: (jobId: string) =>
+    request<JobStatus>(`/gen/status/${encodeURIComponent(jobId)}`)
+}
+
+/** 成品图 URL：真实 <img> 的 src（同源会话自动带 Cookie）。 */
+export function genImageUrl(jobId: string): string {
+  return `/api/gen/image/${encodeURIComponent(jobId)}`
 }
