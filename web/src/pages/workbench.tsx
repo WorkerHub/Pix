@@ -65,7 +65,11 @@ export function WorkbenchPage() {
     try {
       const res = await genApi.health()
       if (!res.online) {
-        setPhase("offline")
+        setPhase((prev) =>
+          prev === "idle" || prev === "offline" || prev === "starting"
+            ? "offline"
+            : prev
+        )
         return false
       }
       if (res.ready === false) {
@@ -79,7 +83,11 @@ export function WorkbenchPage() {
       )
       return true
     } catch {
-      setPhase("offline")
+      setPhase((prev) =>
+        prev === "idle" || prev === "offline" || prev === "starting"
+          ? "offline"
+          : prev
+      )
       return false
     }
   }, [])
@@ -100,7 +108,7 @@ export function WorkbenchPage() {
         }
         if (res.state === "error") {
           setPhase("error")
-          setErrorMessage(res.error || null)
+          setErrorMessage(t("generate.error"))
           clearStoredJob()
           return
         }
@@ -110,7 +118,7 @@ export function WorkbenchPage() {
         if (err instanceof ApiError) {
           if (err.status === 404) {
             setPhase("error")
-            setErrorMessage(err.message || null)
+            setErrorMessage(t("generate.jobNotFound"))
             clearStoredJob()
             return
           }
@@ -269,6 +277,7 @@ export function WorkbenchPage() {
       }
 
       setPhase("error")
+      setErrorMessage(t("generate.error"))
     } catch (err) {
       if (err instanceof ApiError && (err.status === 502 || err.status === 0)) {
         setPhase("offline")
@@ -314,15 +323,23 @@ export function WorkbenchPage() {
       }
       if (res.state === "error") {
         setPhase("error")
-        setErrorMessage(res.error || null)
+        setErrorMessage(t("generate.error"))
         clearStoredJob()
         return
       }
       // running 或 queued 仍停留在超时态待用户决定
     } catch (err) {
-      if (err instanceof ApiError && (err.status === 502 || err.status === 0)) {
-        setPhase("offline")
-        return
+      if (err instanceof ApiError) {
+        if (err.status === 404) {
+          setPhase("error")
+          setErrorMessage(t("generate.jobNotFound"))
+          clearStoredJob()
+          return
+        }
+        if (err.status === 502 || err.status === 0) {
+          setPhase("offline")
+          return
+        }
       }
       setPhase("error")
       setErrorMessage(describeApiError(t, err))
