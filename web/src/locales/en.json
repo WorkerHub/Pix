@@ -208,6 +208,7 @@
     "starting": "Machine starting",
     "busy": "Machine busy",
     "error": "Generation failed",
+    "jobNotFound": "Job not found or expired",
     "timeout": "Generation timed out",
     "recheckOnce": "Check again",
     "regenerate": "Regenerate"

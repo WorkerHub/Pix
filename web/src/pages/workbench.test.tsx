@@ -17,7 +17,7 @@ vi.mock("@/lib/api", async (importOriginal) => {
   }
 })
 
-const { genApi } = await import("@/lib/api")
+const { genApi, ApiError } = await import("@/lib/api")
 
 function renderPage() {
   return render(<WorkbenchPage />)
@@ -208,7 +208,7 @@ describe("生图页（规格 §5，单页，UI 极简）", () => {
     })
 
     await waitFor(() => {
-      expect(screen.getByRole("alert")).toHaveTextContent("ComfyUI GPU OOM")
+      expect(screen.getByRole("alert")).toHaveTextContent("生成失败")
       expect(
         screen.getByRole("button", { name: "重新生成" })
       ).toBeInTheDocument()
@@ -388,6 +388,73 @@ describe("生图页（规格 §5，单页，UI 极简）", () => {
         initialStatusCalls
       )
     })
+  })
+
+  it("完成态切后台且机器离线，切回前台时不被离线态覆盖图", async () => {
+    localStorage.setItem(
+      GEN_JOB_STORAGE_KEY,
+      JSON.stringify({
+        jobId: "done-job-1",
+        prompt: "测试图",
+        size: "portrait",
+        submittedAt: Date.now() - 5000
+      })
+    )
+    vi.mocked(genApi.status).mockResolvedValue({ state: "done" })
+
+    renderPage()
+
+    expect(await screen.findByRole("img")).toBeInTheDocument()
+
+    // 机器变为离线
+    vi.mocked(genApi.health).mockResolvedValue({ online: false })
+
+    // 模拟切回前台 visibilitychange
+    Object.defineProperty(document, "visibilityState", {
+      configurable: true,
+      value: "visible"
+    })
+    fireEvent(document, new Event("visibilitychange"))
+
+    await act(async () => {
+      await Promise.resolve()
+    })
+
+    // 图依然在，不被「机器离线」覆盖
+    expect(screen.getByRole("img")).toBeInTheDocument()
+    expect(screen.queryByText("机器离线")).not.toBeInTheDocument()
+  })
+
+  it("查询任务返回 404：展示本地化任务失效文案并清理本地存储", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    vi.mocked(genApi.submit).mockResolvedValue({ jobId: "job-404" })
+    vi.mocked(genApi.status).mockRejectedValue(
+      new ApiError({ status: 404, message: "job not found" })
+    )
+
+    renderPage()
+
+    fireEvent.change(screen.getByPlaceholderText("提示词"), {
+      target: { value: "丢失任务" }
+    })
+    fireEvent.click(screen.getByRole("button", { name: "生成" }))
+
+    await waitFor(() => {
+      expect(screen.getByText("生成中")).toBeInTheDocument()
+    })
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(5000)
+    })
+
+    await waitFor(() => {
+      expect(screen.getByRole("alert")).toHaveTextContent("任务不存在或已失效")
+      expect(
+        screen.getByRole("button", { name: "重新生成" })
+      ).toBeInTheDocument()
+    })
+
+    expect(localStorage.getItem(GEN_JOB_STORAGE_KEY)).toBeNull()
   })
 
   it("支持英文双语展示", async () => {

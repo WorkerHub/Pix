@@ -208,6 +208,7 @@
     "starting": "机器启动中",
     "busy": "机器忙碌",
     "error": "生成失败",
+    "jobNotFound": "任务不存在或已失效",
     "timeout": "生成超时",
     "recheckOnce": "再查一次",
     "regenerate": "重新生成"
