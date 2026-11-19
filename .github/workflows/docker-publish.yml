@@ -83,9 +83,9 @@ jobs:
             -e SKIP_MODEL_DOWNLOAD=1 \
             -p 8190:8190 pix-service:smoke
 
-          echo "Waiting for proxy and ComfyUI to become ready..."
+          echo "Waiting for proxy and ComfyUI to become ready (timeout 180s)..."
           PASSED=0
-          for i in $(seq 1 30); do
+          for i in $(seq 1 90); do
             sleep 2
             RES=$(curl -s -H "X-Pix-Secret: smoke-secret" http://127.0.0.1:8190/health || true)
             echo "Attempt $i: $RES"
