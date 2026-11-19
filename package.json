@@ -15,6 +15,7 @@
     "format": "biome format --write .",
     "format:check": "biome format .",
     "test": "pnpm --filter ./worker test && pnpm --filter ./web test",
+    "test:machine": "python3 -m pytest machine/tests",
     "check:identity": "node scripts/check-identity.mjs",
     "check:deploy": "pnpm build:web && pnpm --filter ./worker exec wrangler deploy --dry-run",
     "schema:sql": "pnpm --filter ./worker schema:sql",
