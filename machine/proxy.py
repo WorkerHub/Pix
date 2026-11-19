@@ -41,7 +41,7 @@ async def check_comfy_liveness() -> bool:
 
 
 async def is_comfy_ready() -> bool:
-    if not model_manager.fully_ready:
+    if not model_manager.is_default_ready():
         return False
     return await check_comfy_liveness()
 
@@ -49,7 +49,7 @@ async def is_comfy_ready() -> bool:
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     logger.info("Starting pix-service proxy...")
-    asyncio.create_task(model_manager.ensure_models())
+    asyncio.create_task(model_manager.ensure_all_models())
     yield
     logger.info("Shutting down pix-service proxy...")
 
@@ -90,7 +90,17 @@ async def generate(request: Request):
     if size not in config.SIZES:
         return JSONResponse(status_code=400, content={"error": "invalid_size"})
 
+    model_id = body.get("model")
+    if model_id is None:
+        model_id = config.DEFAULT_MODEL_ID
+    elif not isinstance(model_id, str) or model_id not in config.MODEL_REGISTRY:
+        return JSONResponse(status_code=400, content={"error": "invalid_model"})
+
+    if not model_manager.is_model_ready(model_id):
+        return JSONResponse(status_code=503, content={"error": "model_not_ready"})
+
     dims = config.SIZES[size]
+    model_cfg = config.MODEL_REGISTRY[model_id]
 
     async with submission_lock:
         # 检查单并发限制（已有任务排队/运行 -> 409 busy）
@@ -114,12 +124,11 @@ async def generate(request: Request):
 
         job_id = str(uuid.uuid4())
         seed = random.randint(0, 0xFFFFFFFFFFFFFFFF)
-        model_name = model_manager.active_model_name
-
+        ckpt_filename = model_manager.get_model_filename(model_id)
         workflow = {
             "1": {
                 "class_type": "CheckpointLoaderSimple",
-                "inputs": {"ckpt_name": model_name},
+                "inputs": {"ckpt_name": ckpt_filename},
             },
             "2": {
                 "class_type": "CLIPTextEncode",
@@ -145,11 +154,11 @@ async def generate(request: Request):
                     "negative": ["3", 0],
                     "latent_image": ["4", 0],
                     "seed": seed,
-                    "steps": config.STEPS,
-                    "cfg": config.CFG,
-                    "sampler_name": config.SAMPLER_NAME,
-                    "scheduler": config.SCHEDULER,
-                    "denoise": config.DENOISE,
+                    "steps": model_cfg["steps"],
+                    "cfg": model_cfg["cfg"],
+                    "sampler_name": model_cfg["sampler_name"],
+                    "scheduler": model_cfg["scheduler"],
+                    "denoise": model_cfg["denoise"],
                 },
             },
             "6": {
@@ -188,6 +197,7 @@ async def generate(request: Request):
             "prompt": prompt,
             "size": size,
             "seed": seed,
+            "model": model_id,
         }
         return JSONResponse(status_code=202, content={"jobId": job_id})
 

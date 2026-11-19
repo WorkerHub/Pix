@@ -8,6 +8,10 @@ export interface Env {
   DB: D1Database
   /** Workers Static Assets：前端构建产物 web/dist。 */
   ASSETS: Fetcher
+  /** 业务文件对象存储（R2）：专属 bucket（见 wrangler.toml 的 IMAGES 绑定），用于持久化出图成品及暂存元数据。 */
+  IMAGES?: R2Bucket
+  /** Cloudflare Workers AI 绑定（模型 @cf/meta/m2m100-1.2b 用于提示词翻译）。 */
+  AI?: Ai
   /** setup / 数据库维护的 X-Setup-Secret 令牌（仓库级 secret）。 */
   SETUP_SECRET?: string
   /**
@@ -21,6 +25,11 @@ export interface Env {
   WAKER_SIGNING_KEY?: string
   /** 构建期注入的版本号（§6.3），只经 /api/public 暴露；不写死在前端。 */
   APP_VERSION?: string
+  /**
+   * 默认生图模型（非机密，走 [vars] 静态配置或环境变量注入；未配置时回退到 realistic-lcm）。
+   * 允许值：realistic-lcm / realistic / majicmix / dreamshaper / counterfeit。
+   */
+  DEFAULT_MODEL?: string
   /**
    * 机器侧接线值（Worker secret）：private 发布基地址。
    * 含平台令牌的完整接入形式以用户侧上机实测为准，代码只在此基地址后拼 §4.4 路径。

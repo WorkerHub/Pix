@@ -15,15 +15,62 @@
  * 每次对机器的调用直接响应浏览器的一次请求。
  */
 import { Hono } from "hono"
-import { MACHINE_AUTH_HEADER } from "../config/project"
+import { MACHINE_AUTH_HEADER, PROJECT_SLUG } from "../config/project"
+import {
+  deleteGenerationByIdAndUser,
+  findGenerationByIdAndUser,
+  findGenerationByJobId,
+  insertGeneration,
+  listGenerationsByUser
+} from "../db/queries/generations"
+import { currentUserId } from "../lib/account"
 import { readJsonBody } from "../lib/http"
+import { getTablePrefix } from "../lib/table-prefix"
+import { resolvePrompt } from "../lib/translate"
 import type { HonoEnv } from "../types"
 
 export const genRoutes = new Hono<HonoEnv>()
 
+export const ALLOWED_MODELS = [
+  "realistic-lcm",
+  "realistic",
+  "majicmix",
+  "dreamshaper",
+  "counterfeit"
+] as const
+
+export type GenerationModel = (typeof ALLOWED_MODELS)[number]
+
+export const DEFAULT_MODEL: GenerationModel = "realistic-lcm"
+
+export function isValidModel(model: unknown): model is GenerationModel {
+  return (
+    typeof model === "string" &&
+    (ALLOWED_MODELS as readonly string[]).includes(model)
+  )
+}
+
+/**
+ * 解析生图默认模型：
+ * 优先读取运行期环境变量（env.DEFAULT_MODEL，经 trim 去除多余空白）；
+ * 若配置值存在且在 ALLOWED_MODELS 允许名单中，则采用该配置值；
+ * 缺失、空值或非法值时，安全回退到代码常量 DEFAULT_MODEL ("realistic-lcm")。
+ */
+export function resolveDefaultModel(
+  env?: { DEFAULT_MODEL?: string } | null
+): GenerationModel {
+  const raw = env?.DEFAULT_MODEL
+  const configured = typeof raw === "string" ? raw.trim() : ""
+  if (configured && isValidModel(configured)) {
+    return configured
+  }
+  return DEFAULT_MODEL
+}
+
 export interface GenerateRequestBody {
   prompt: string
   size: "portrait" | "square"
+  model?: string
 }
 
 /**
@@ -164,6 +211,28 @@ genRoutes.post("/", async (c) => {
     )
   }
 
+  if (
+    body.model !== undefined &&
+    body.model !== null &&
+    !isValidModel(body.model)
+  ) {
+    return c.json(
+      {
+        error: `Invalid model: must be one of ${ALLOWED_MODELS.join(", ")}`
+      },
+      400
+    )
+  }
+
+  const defaultModel = resolveDefaultModel(c.env)
+  const selectedModel: GenerationModel =
+    body.model === undefined || body.model === null ? defaultModel : body.model
+
+  const { translated, effectivePrompt } = await resolvePrompt(
+    c.env.AI,
+    body.prompt
+  )
+
   const machineUrl = c.env.PIX_SERVER_URL
   if (!machineUrl) {
     return c.json({ online: false }, 200)
@@ -179,7 +248,11 @@ genRoutes.post("/", async (c) => {
     const res = await fetch(targetUrl, {
       method: "POST",
       headers,
-      body: JSON.stringify({ prompt: body.prompt, size: body.size }),
+      body: JSON.stringify({
+        prompt: effectivePrompt,
+        size: body.size,
+        model: selectedModel
+      }),
       signal: AbortSignal.timeout(10000)
     })
 
@@ -188,7 +261,36 @@ genRoutes.post("/", async (c) => {
         jobId?: unknown
       } | null
       if (data && typeof data.jobId === "string" && data.jobId.length > 0) {
-        return c.json({ jobId: data.jobId }, 200)
+        const jobId = data.jobId
+        const userId = currentUserId(c)
+        // 暂存提交元数据，供 GET /image/:jobId 成功落库时消费并删除。
+        // 注意：任务失败 / 用户弃单 / 从不取图时，这个 JSON 会残留；
+        // 已知轻微存储泄漏，暂无 TTL 清理，容量影响可忽略。
+        if (c.env.IMAGES) {
+          try {
+            await c.env.IMAGES.put(
+              `_pending/${jobId}.json`,
+              JSON.stringify({
+                userId,
+                promptOriginal: body.prompt,
+                promptEffective: effectivePrompt,
+                size: body.size,
+                model: selectedModel,
+                createdAt: new Date().toISOString()
+              })
+            )
+          } catch (err) {
+            console.warn("Failed to stage pending metadata:", err)
+          }
+        }
+        return c.json(
+          {
+            jobId,
+            translated,
+            effectivePrompt
+          },
+          200
+        )
       }
       return c.json({ online: false }, 200)
     }
@@ -268,7 +370,85 @@ genRoutes.get("/image/:jobId", async (c) => {
     })
 
     if (res.status === 200) {
-      return new Response(res.body, {
+      const imageBytes = await res.arrayBuffer()
+
+      const persistPromise = (async () => {
+        try {
+          const prefix = getTablePrefix(c.env)
+          const existing = await findGenerationByJobId(c.env.DB, prefix, jobId)
+          if (existing || !c.env.IMAGES) {
+            return
+          }
+
+          const pendingKey = `_pending/${jobId}.json`
+          const pendingObj = await c.env.IMAGES.get(pendingKey).catch(
+            () => null
+          )
+          // 提交时暂存失败或从未经 POST（直接取图）→ 无法可靠归属，只回图不记历史，
+          // 避免写出 prompt 为空 / 归属错乱的废记录。
+          if (!pendingObj) {
+            return
+          }
+          const meta = (await pendingObj.json().catch(() => null)) as {
+            userId?: number
+            promptOriginal?: string
+            promptEffective?: string
+            size?: "portrait" | "square"
+            model?: string
+            createdAt?: string
+          } | null
+          // 元数据不完整（缺 user_id）同样跳过：user_id 是 NOT NULL 且决定归属。
+          if (!meta || typeof meta.userId !== "number") {
+            return
+          }
+
+          const userId = meta.userId
+          const promptOriginal =
+            typeof meta.promptOriginal === "string" ? meta.promptOriginal : ""
+          const promptEffective =
+            typeof meta.promptEffective === "string" ? meta.promptEffective : ""
+          const size: "portrait" | "square" =
+            meta.size === "portrait" || meta.size === "square"
+              ? meta.size
+              : "square"
+          const defaultModel = resolveDefaultModel(c.env)
+          const model: GenerationModel = isValidModel(meta.model)
+            ? meta.model
+            : defaultModel
+          const createdAt =
+            typeof meta.createdAt === "string"
+              ? meta.createdAt
+              : new Date().toISOString()
+
+          const r2Key = `${userId}/${jobId}.png`
+          await c.env.IMAGES.put(r2Key, imageBytes, {
+            httpMetadata: { contentType: "image/png" }
+          })
+
+          await insertGeneration(c.env.DB, prefix, {
+            userId,
+            jobId,
+            model,
+            promptOriginal,
+            promptEffective,
+            size,
+            r2Key,
+            createdAt
+          })
+
+          await c.env.IMAGES.delete(pendingKey).catch(() => null)
+        } catch (err) {
+          console.warn("Failed to persist generation to R2/D1:", err)
+        }
+      })()
+
+      try {
+        c.executionCtx.waitUntil(persistPromise)
+      } catch {
+        await persistPromise
+      }
+
+      return new Response(imageBytes, {
         status: 200,
         headers: {
           "Content-Type": "image/png",
@@ -288,4 +468,125 @@ genRoutes.get("/image/:jobId", async (c) => {
   } catch {
     return c.json({ error: "Machine unreachable" }, 502)
   }
+})
+
+/**
+ * 5. 历史列表：GET /api/gen/history?page=&pageSize=
+ * 当前用户历史列表，按 id 倒序；项含 id（编号）、prompt_original、prompt_effective、size、created_at、imageUrl。
+ */
+genRoutes.get("/history", async (c) => {
+  const prefix = getTablePrefix(c.env)
+  const userId = currentUserId(c)
+
+  const pageParam = parseInt(c.req.query("page") || "1", 10)
+  const page = Number.isNaN(pageParam) || pageParam < 1 ? 1 : pageParam
+
+  const pageSizeParam = parseInt(c.req.query("pageSize") || "12", 10)
+  const pageSize =
+    Number.isNaN(pageSizeParam) || pageSizeParam < 1
+      ? 12
+      : Math.min(100, pageSizeParam)
+
+  const offset = (page - 1) * pageSize
+  const { rows, total } = await listGenerationsByUser(
+    c.env.DB,
+    prefix,
+    userId,
+    pageSize,
+    offset
+  )
+
+  const totalPages = Math.ceil(total / pageSize)
+
+  return c.json({
+    items: rows.map((r) => ({
+      id: r.id,
+      job_id: r.job_id,
+      model: r.model,
+      prompt_original: r.prompt_original,
+      prompt_effective: r.prompt_effective,
+      size: r.size,
+      created_at: r.created_at,
+      imageUrl: `/api/gen/history/${r.id}/image`
+    })),
+    total,
+    page,
+    pageSize,
+    totalPages
+  })
+})
+
+/**
+ * 6. 历史取图：GET /api/gen/history/:id/image
+ * 从 R2 流出原图；?download=1 加 Content-Disposition: attachment，文件名 <slug>-<编号>.png。
+ * 只能读自己的，非本人或不存在返回 404。
+ */
+genRoutes.get("/history/:id/image", async (c) => {
+  const id = parseInt(c.req.param("id"), 10)
+  if (Number.isNaN(id) || id <= 0) {
+    return c.json({ error: "Generation not found" }, 404)
+  }
+
+  const prefix = getTablePrefix(c.env)
+  const userId = currentUserId(c)
+  const item = await findGenerationByIdAndUser(c.env.DB, prefix, id, userId)
+  if (!item) {
+    return c.json({ error: "Generation not found" }, 404)
+  }
+
+  if (!c.env.IMAGES) {
+    return c.json({ error: "Image not found" }, 404)
+  }
+
+  const obj = await c.env.IMAGES.get(item.r2_key)
+  if (!obj) {
+    return c.json({ error: "Image not found" }, 404)
+  }
+
+  const headers: Record<string, string> = {
+    "Content-Type": "image/png",
+    "Cache-Control": "private, no-cache, no-store, must-revalidate"
+  }
+
+  if (c.req.query("download") === "1") {
+    headers["Content-Disposition"] =
+      `attachment; filename="${PROJECT_SLUG}-${item.id}.png"`
+  }
+
+  return new Response(obj.body, {
+    status: 200,
+    headers
+  })
+})
+
+/**
+ * 7. 删除历史：DELETE /api/gen/history/:id
+ * 删 R2 对象 + 索引行；只能删自己的，非本人或不存在返回 404。
+ */
+genRoutes.delete("/history/:id", async (c) => {
+  const id = parseInt(c.req.param("id"), 10)
+  if (Number.isNaN(id) || id <= 0) {
+    return c.json({ error: "Generation not found" }, 404)
+  }
+
+  const prefix = getTablePrefix(c.env)
+  const userId = currentUserId(c)
+  const item = await findGenerationByIdAndUser(c.env.DB, prefix, id, userId)
+  if (!item) {
+    return c.json({ error: "Generation not found" }, 404)
+  }
+
+  // 先删 D1 索引行：D1 失败则整段失败（不返回 success），避免留下「列表可见、图已删」的坏记录。
+  await deleteGenerationByIdAndUser(c.env.DB, prefix, id, userId)
+
+  // 再删 R2 对象：失败只留不可见的孤儿对象，记日志即可，不反向影响删除结果。
+  if (c.env.IMAGES) {
+    try {
+      await c.env.IMAGES.delete(item.r2_key)
+    } catch (err) {
+      console.warn("Failed to delete R2 object:", err)
+    }
+  }
+
+  return c.json({ success: true }, 200)
 })
