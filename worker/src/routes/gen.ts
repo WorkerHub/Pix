@@ -245,6 +245,9 @@ genRoutes.post("/", async (c) => {
       if (data && typeof data.jobId === "string" && data.jobId.length > 0) {
         const jobId = data.jobId
         const userId = currentUserId(c)
+        // 暂存提交元数据，供 GET /image/:jobId 成功落库时消费并删除。
+        // 注意：任务失败 / 用户弃单 / 从不取图时，这个 JSON 会残留；
+        // 已知轻微存储泄漏，暂无 TTL 清理，容量影响可忽略。
         if (c.env.IMAGES) {
           try {
             await c.env.IMAGES.put(
@@ -363,34 +366,40 @@ genRoutes.get("/image/:jobId", async (c) => {
           const pendingObj = await c.env.IMAGES.get(pendingKey).catch(
             () => null
           )
-          let userId = currentUserId(c)
-          let promptOriginal = ""
-          let promptEffective = ""
-          let size: "portrait" | "square" = "square"
-          let model: GenerationModel = DEFAULT_MODEL
-          let createdAt = new Date().toISOString()
-
-          if (pendingObj) {
-            const meta = (await pendingObj.json().catch(() => null)) as {
-              userId?: number
-              promptOriginal?: string
-              promptEffective?: string
-              size?: "portrait" | "square"
-              model?: string
-              createdAt?: string
-            } | null
-            if (meta) {
-              if (typeof meta.userId === "number") userId = meta.userId
-              if (typeof meta.promptOriginal === "string")
-                promptOriginal = meta.promptOriginal
-              if (typeof meta.promptEffective === "string")
-                promptEffective = meta.promptEffective
-              if (meta.size === "portrait" || meta.size === "square")
-                size = meta.size
-              if (isValidModel(meta.model)) model = meta.model
-              if (typeof meta.createdAt === "string") createdAt = meta.createdAt
-            }
+          // 提交时暂存失败或从未经 POST（直接取图）→ 无法可靠归属，只回图不记历史，
+          // 避免写出 prompt 为空 / 归属错乱的废记录。
+          if (!pendingObj) {
+            return
           }
+          const meta = (await pendingObj.json().catch(() => null)) as {
+            userId?: number
+            promptOriginal?: string
+            promptEffective?: string
+            size?: "portrait" | "square"
+            model?: string
+            createdAt?: string
+          } | null
+          // 元数据不完整（缺 user_id）同样跳过：user_id 是 NOT NULL 且决定归属。
+          if (!meta || typeof meta.userId !== "number") {
+            return
+          }
+
+          const userId = meta.userId
+          const promptOriginal =
+            typeof meta.promptOriginal === "string" ? meta.promptOriginal : ""
+          const promptEffective =
+            typeof meta.promptEffective === "string" ? meta.promptEffective : ""
+          const size: "portrait" | "square" =
+            meta.size === "portrait" || meta.size === "square"
+              ? meta.size
+              : "square"
+          const model: GenerationModel = isValidModel(meta.model)
+            ? meta.model
+            : DEFAULT_MODEL
+          const createdAt =
+            typeof meta.createdAt === "string"
+              ? meta.createdAt
+              : new Date().toISOString()
 
           const r2Key = `${userId}/${jobId}.png`
           await c.env.IMAGES.put(r2Key, imageBytes, {
@@ -408,9 +417,7 @@ genRoutes.get("/image/:jobId", async (c) => {
             createdAt
           })
 
-          if (pendingObj) {
-            await c.env.IMAGES.delete(pendingKey).catch(() => null)
-          }
+          await c.env.IMAGES.delete(pendingKey).catch(() => null)
         } catch (err) {
           console.warn("Failed to persist generation to R2/D1:", err)
         }
@@ -550,6 +557,10 @@ genRoutes.delete("/history/:id", async (c) => {
     return c.json({ error: "Generation not found" }, 404)
   }
 
+  // 先删 D1 索引行：D1 失败则整段失败（不返回 success），避免留下「列表可见、图已删」的坏记录。
+  await deleteGenerationByIdAndUser(c.env.DB, prefix, id, userId)
+
+  // 再删 R2 对象：失败只留不可见的孤儿对象，记日志即可，不反向影响删除结果。
   if (c.env.IMAGES) {
     try {
       await c.env.IMAGES.delete(item.r2_key)
@@ -557,8 +568,6 @@ genRoutes.delete("/history/:id", async (c) => {
       console.warn("Failed to delete R2 object:", err)
     }
   }
-
-  await deleteGenerationByIdAndUser(c.env.DB, prefix, id, userId)
 
   return c.json({ success: true }, 200)
 })

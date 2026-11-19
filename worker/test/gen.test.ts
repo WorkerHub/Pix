@@ -961,8 +961,54 @@ describe("GET /api/gen/image/:jobId 取图流式透传与无公共缓存", () =>
     expect(res2.status).toBe(200)
   })
 
+  it("pending 元数据缺失时不记历史：照常回图，不落 R2 / D1 空记录", async () => {
+    const r2 = ctx.env.IMAGES as unknown as MockR2Bucket
+    const prefix = activePrefix(ctx.env)
+    const session = await seedSession(ctx.db, prefix, {
+      email: "no-pending@example.test"
+    })
+
+    const fakeImageData = new Uint8Array([9, 9, 9])
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(fakeImageData, {
+        status: 200,
+        headers: { "Content-Type": "image/png" }
+      })
+    )
+
+    const res = await request(ctx.env, "/api/gen/image/job-no-pending", {
+      headers: { Cookie: session.cookie }
+    })
+    expect(res.status).toBe(200)
+
+    // 不落任何 R2 对象、不写 D1 记录（不产生 prompt 为空的废记录）
+    expect(await r2.get(`${session.userId}/job-no-pending.png`)).toBeNull()
+    const record = await findGenerationByJobId(
+      ctx.env.DB,
+      prefix,
+      "job-no-pending"
+    )
+    expect(record).toBeNull()
+  })
+
   it("当 R2 或 D1 持久化发生异常时，不阻塞图片正常流式返回（容错保障）", async () => {
     const r2 = ctx.env.IMAGES as unknown as MockR2Bucket
+    const prefix = activePrefix(ctx.env)
+    const session = await seedSession(ctx.db, prefix, {
+      email: "fail-storage@example.test"
+    })
+
+    // 预存 pending 元数据，确保代码走到 R2 put 路径（而非 pending 缺失提前返回）
+    await r2.put(
+      "_pending/job-fail-storage.json",
+      JSON.stringify({
+        userId: session.userId,
+        promptOriginal: "fail storage",
+        promptEffective: "fail storage",
+        size: "square"
+      })
+    )
+
     // 破坏 put 方法以模拟 R2 故障
     vi.spyOn(r2, "put").mockRejectedValue(new Error("R2 storage unavailable"))
 
@@ -975,7 +1021,7 @@ describe("GET /api/gen/image/:jobId 取图流式透传与无公共缓存", () =>
     )
 
     const res = await request(ctx.env, "/api/gen/image/job-fail-storage", {
-      headers: { Cookie: authCookie }
+      headers: { Cookie: session.cookie }
     })
 
     // 即使存储异常，向客户端依然返回 200 与图片流
