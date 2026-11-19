@@ -41,7 +41,7 @@ async def check_comfy_liveness() -> bool:
 
 
 async def is_comfy_ready() -> bool:
-    if not model_manager.is_ready:
+    if not model_manager.fully_ready:
         return False
     return await check_comfy_liveness()
 
@@ -50,6 +50,7 @@ async def is_comfy_ready() -> bool:
 async def lifespan(app: FastAPI):
     logger.info("Starting pix-service proxy...")
     asyncio.create_task(model_manager.ensure_model())
+    asyncio.create_task(model_manager.ensure_lora())
     yield
     logger.info("Shutting down pix-service proxy...")
 
@@ -121,13 +122,23 @@ async def generate(request: Request):
                 "class_type": "CheckpointLoaderSimple",
                 "inputs": {"ckpt_name": model_name},
             },
+            "8": {
+                "class_type": "LoraLoader",
+                "inputs": {
+                    "model": ["1", 0],
+                    "clip": ["1", 1],
+                    "lora_name": config.LORA_NAME,
+                    "strength_model": 1.0,
+                    "strength_clip": 1.0,
+                },
+            },
             "2": {
                 "class_type": "CLIPTextEncode",
-                "inputs": {"text": prompt.strip(), "clip": ["1", 1]},
+                "inputs": {"text": prompt.strip(), "clip": ["8", 1]},
             },
             "3": {
                 "class_type": "CLIPTextEncode",
-                "inputs": {"text": config.FIXED_NEGATIVE_PROMPT, "clip": ["1", 1]},
+                "inputs": {"text": config.FIXED_NEGATIVE_PROMPT, "clip": ["8", 1]},
             },
             "4": {
                 "class_type": "EmptyLatentImage",
@@ -140,7 +151,7 @@ async def generate(request: Request):
             "5": {
                 "class_type": "KSampler",
                 "inputs": {
-                    "model": ["1", 0],
+                    "model": ["8", 0],
                     "positive": ["2", 0],
                     "negative": ["3", 0],
                     "latent_image": ["4", 0],
