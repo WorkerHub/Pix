@@ -210,3 +210,33 @@ export interface AdminChangeRoleInput {
 export interface AdminUserActionResult {
   success: true
 }
+
+/* 生图接口契约（对齐 worker/src/routes/gen.ts 与 machine/proxy.py） */
+
+export type GenerateSize = "portrait" | "square"
+
+/** GET /api/gen/health：机器探活。online:false 时无 ready 字段。 */
+export interface GenHealth {
+  online: boolean
+  ready?: boolean
+}
+
+export interface GenerateInput {
+  prompt: string
+  size: GenerateSize
+}
+
+/** POST /api/gen：除 400 外一律 200，前端只认形状。 */
+export type GenerateResult =
+  | { jobId: string }
+  | { busy: true }
+  | { ready: false }
+  | { online: false }
+
+export type JobState = "queued" | "running" | "done" | "error"
+
+/** GET /api/gen/status/:jobId：转发机器状态。 */
+export interface JobStatus {
+  state: JobState
+  error?: string
+}
