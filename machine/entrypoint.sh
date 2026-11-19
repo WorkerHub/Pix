@@ -5,6 +5,7 @@ echo "[pix-service] Starting container entrypoint..."
 
 # 确保模型目录与输出目录存在
 mkdir -p /app/ComfyUI/models/checkpoints
+mkdir -p /app/ComfyUI/models/loras
 mkdir -p /app/ComfyUI/output
 mkdir -p /app/ComfyUI/user
 
