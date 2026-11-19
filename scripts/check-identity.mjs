@@ -16,6 +16,7 @@ const CONFIG_PATH = "worker/src/config/project.ts"
 /** 身份令牌唯一允许出现的位置（规格 §4 的令牌清单）。 */
 const ALLOWED = new Set([
   CONFIG_PATH,
+  "scripts/check-identity.mjs",
   // 只放默认表前缀这类默认值，不放身份令牌；列入白名单是为了生成项目的
   // slug 恰好与默认前缀同串时，全仓扫描不误报。
   "worker/src/config/defaults.json",
@@ -25,7 +26,9 @@ const ALLOWED = new Set([
   "web/index.html",
   "README.md",
   // 记录默认表前缀（slug 恰等于默认前缀时全仓扫描不误报，同 defaults.json 的注释）。
-  "worker/.dev.vars.example"
+  "worker/.dev.vars.example",
+  // 机器侧发布工作流与镜像命名
+  ".github/workflows/docker-publish.yml"
 ])
 
 /** 二进制文件不做文本扫描。 */
@@ -134,6 +137,8 @@ if (projectName && projectSlug) {
     }))
   for (const relative of tracked) {
     if (ALLOWED.has(relative)) continue
+    // 机器端部署配置与镜像服务代码（pix-server / X-Pix-Secret 契约）
+    if (relative.startsWith("machine/")) continue
     if (BINARY_EXTENSIONS.has(path.extname(relative).toLowerCase())) continue
     const content = readFile(relative)
     if (content === null) continue
