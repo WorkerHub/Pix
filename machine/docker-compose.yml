@@ -24,4 +24,5 @@ services:
       - LORA_NAME=${LORA_NAME:-lcm-lora-sdv1-5.safetensors}
       - LORA_DOWNLOAD_URL=${LORA_DOWNLOAD_URL:-https://huggingface.co/latent-consistency/lcm-lora-sdv1-5/resolve/main/pytorch_lora_weights.safetensors}
       - LORA_SHA256=${LORA_SHA256:-8f90d840e075ff588a58e22c6586e2ae9a6f7922996ee6649a7f01072333afe4}
+      - MERGED_MODEL_NAME=${MERGED_MODEL_NAME:-Realistic_Vision_V6.0_B1_LCM.safetensors}
       - SKIP_MODEL_DOWNLOAD=${SKIP_MODEL_DOWNLOAD:-0}

@@ -271,34 +271,29 @@ def test_generate_202_default_portrait_and_parameters(client, mock_comfy_server)
     assert last_prompt["prompt_id"] == job_id
     workflow = last_prompt["prompt"]
 
-    # 验证模型节点
+    # 验证模型节点（加载合并了 LCM-LoRA 的 checkpoint）
     assert workflow["1"]["class_type"] == "CheckpointLoaderSimple"
-    assert workflow["1"]["inputs"]["ckpt_name"] == config.DEFAULT_MODEL_NAME
+    assert workflow["1"]["inputs"]["ckpt_name"] == config.DEFAULT_MERGED_MODEL_NAME
 
-    # 验证 LoRA 加载节点（checkpoint 后串 LCM-LoRA，strength 1.0）
-    assert workflow["8"]["class_type"] == "LoraLoader"
-    assert workflow["8"]["inputs"]["model"] == ["1", 0]
-    assert workflow["8"]["inputs"]["clip"] == ["1", 1]
-    assert workflow["8"]["inputs"]["lora_name"] == config.LORA_NAME
-    assert workflow["8"]["inputs"]["strength_model"] == 1.0
-    assert workflow["8"]["inputs"]["strength_clip"] == 1.0
+    # 验证不再有运行时 LoraLoader 节点（避免动态打补丁导致 OOM）
+    assert "8" not in workflow
 
-    # 验证正负面词（clip 取自 LoRA 节点输出）
+    # 验证正负面词（clip 直连 checkpoint 节点输出）
     assert workflow["2"]["class_type"] == "CLIPTextEncode"
     assert workflow["2"]["inputs"]["text"] == "masterpiece, ultra-detailed portrait"
-    assert workflow["2"]["inputs"]["clip"] == ["8", 1]
+    assert workflow["2"]["inputs"]["clip"] == ["1", 1]
     assert workflow["3"]["class_type"] == "CLIPTextEncode"
     assert workflow["3"]["inputs"]["text"] == config.FIXED_NEGATIVE_PROMPT
-    assert workflow["3"]["inputs"]["clip"] == ["8", 1]
+    assert workflow["3"]["inputs"]["clip"] == ["1", 1]
 
     # 验证尺寸默认 portrait 512x768
     assert workflow["4"]["class_type"] == "EmptyLatentImage"
     assert workflow["4"]["inputs"]["width"] == 512
     assert workflow["4"]["inputs"]["height"] == 768
 
-    # 验证 LCM 采样参数与随机 seed（model 取自 LoRA 节点输出）
+    # 验证 LCM 采样参数与随机 seed（model 直连 checkpoint 节点输出）
     ksampler = workflow["5"]["inputs"]
-    assert ksampler["model"] == ["8", 0]
+    assert ksampler["model"] == ["1", 0]
     assert ksampler["sampler_name"] == "lcm"
     assert ksampler["scheduler"] == "sgm_uniform"
     assert ksampler["steps"] == 8

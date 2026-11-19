@@ -42,6 +42,10 @@ LORA_NAME = os.getenv("LORA_NAME", DEFAULT_LORA_NAME)
 LORA_DOWNLOAD_URL = os.getenv("LORA_DOWNLOAD_URL", DEFAULT_LORA_URL)
 LORA_SHA256 = os.getenv("LORA_SHA256", DEFAULT_LORA_SHA256)
 
+# Offline Merged Model (Base checkpoint + LCM-LoRA baked in)
+DEFAULT_MERGED_MODEL_NAME = "Realistic_Vision_V6.0_B1_LCM.safetensors"
+MERGED_MODEL_NAME = os.getenv("MERGED_MODEL_NAME", DEFAULT_MERGED_MODEL_NAME)
+
 # Skip model download (for contract testing / offline builds)
 SKIP_MODEL_DOWNLOAD = os.getenv("SKIP_MODEL_DOWNLOAD", "0").lower() in ("1", "true", "yes")
 
