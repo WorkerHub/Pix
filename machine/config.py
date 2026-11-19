@@ -42,6 +42,127 @@ LORA_NAME = os.getenv("LORA_NAME", DEFAULT_LORA_NAME)
 LORA_DOWNLOAD_URL = os.getenv("LORA_DOWNLOAD_URL", DEFAULT_LORA_URL)
 LORA_SHA256 = os.getenv("LORA_SHA256", DEFAULT_LORA_SHA256)
 
+# majicMIX realistic v7 (Pinned)
+DEFAULT_MAJICMIX_MODEL_NAME = "majicmixRealistic_v7.safetensors"
+DEFAULT_MAJICMIX_DOWNLOAD_URL = "https://huggingface.co/digiplay/majicMIX_realistic_v7/resolve/main/majicmixRealistic_v7.safetensors"
+DEFAULT_MAJICMIX_SHA256 = "7c819b6d13663ed720c2254f4fe18373107dfef2448d337913c8fc545640881e"
+
+MAJICMIX_MODEL_NAME = os.getenv("MAJICMIX_MODEL_NAME", DEFAULT_MAJICMIX_MODEL_NAME)
+MAJICMIX_DOWNLOAD_URL = os.getenv("MAJICMIX_DOWNLOAD_URL", DEFAULT_MAJICMIX_DOWNLOAD_URL)
+MAJICMIX_SHA256 = os.getenv("MAJICMIX_SHA256", DEFAULT_MAJICMIX_SHA256)
+
+# DreamShaper 8 (Lykon/DreamShaper pruned, Pinned)
+DEFAULT_DREAMSHAPER_MODEL_NAME = "DreamShaper_8_pruned.safetensors"
+DEFAULT_DREAMSHAPER_DOWNLOAD_URL = "https://huggingface.co/Lykon/DreamShaper/resolve/main/DreamShaper_8_pruned.safetensors"
+DEFAULT_DREAMSHAPER_SHA256 = "879db523c30d3b9017143d56705015e15a2cb5628762c11d086fed9538abd7fd"
+
+DREAMSHAPER_MODEL_NAME = os.getenv("DREAMSHAPER_MODEL_NAME", DEFAULT_DREAMSHAPER_MODEL_NAME)
+DREAMSHAPER_DOWNLOAD_URL = os.getenv("DREAMSHAPER_DOWNLOAD_URL", DEFAULT_DREAMSHAPER_DOWNLOAD_URL)
+DREAMSHAPER_SHA256 = os.getenv("DREAMSHAPER_SHA256", DEFAULT_DREAMSHAPER_SHA256)
+
+# Counterfeit-V3.0 (gsdf/Counterfeit-V3.0 fix_fp16, Pinned)
+DEFAULT_COUNTERFEIT_MODEL_NAME = "Counterfeit-V3.0_fix_fp16.safetensors"
+DEFAULT_COUNTERFEIT_DOWNLOAD_URL = "https://huggingface.co/gsdf/Counterfeit-V3.0/resolve/main/Counterfeit-V3.0_fix_fp16.safetensors"
+DEFAULT_COUNTERFEIT_SHA256 = "a54c944e4c04e9d9ca43468ef5b90ea0408bb6264829a4980de79a768df7179f"
+
+COUNTERFEIT_MODEL_NAME = os.getenv("COUNTERFEIT_MODEL_NAME", DEFAULT_COUNTERFEIT_MODEL_NAME)
+COUNTERFEIT_DOWNLOAD_URL = os.getenv("COUNTERFEIT_DOWNLOAD_URL", DEFAULT_COUNTERFEIT_DOWNLOAD_URL)
+COUNTERFEIT_SHA256 = os.getenv("COUNTERFEIT_SHA256", DEFAULT_COUNTERFEIT_SHA256)
+
+# Pinned Checkpoints Registry
+CHECKPOINTS = {
+    "realistic_vision": {
+        "filename": MODEL_NAME,
+        "url": MODEL_DOWNLOAD_URL,
+        "sha256": MODEL_SHA256,
+    },
+    "majicmix": {
+        "filename": MAJICMIX_MODEL_NAME,
+        "url": MAJICMIX_DOWNLOAD_URL,
+        "sha256": MAJICMIX_SHA256,
+    },
+    "dreamshaper": {
+        "filename": DREAMSHAPER_MODEL_NAME,
+        "url": DREAMSHAPER_DOWNLOAD_URL,
+        "sha256": DREAMSHAPER_SHA256,
+    },
+    "counterfeit": {
+        "filename": COUNTERFEIT_MODEL_NAME,
+        "url": COUNTERFEIT_DOWNLOAD_URL,
+        "sha256": COUNTERFEIT_SHA256,
+    },
+}
+
+# Pinned LoRAs Registry
+LORAS = {
+    "lcm": {
+        "filename": LORA_NAME,
+        "url": LORA_DOWNLOAD_URL,
+        "sha256": LORA_SHA256,
+    }
+}
+
+# Supported Model Options Catalog
+MODEL_REGISTRY = {
+    "realistic-lcm": {
+        "id": "realistic-lcm",
+        "name": "写实·极速",
+        "checkpoint_key": "realistic_vision",
+        "use_lcm_lora": True,
+        "steps": 8,
+        "cfg": 1.5,
+        "sampler_name": "lcm",
+        "scheduler": "sgm_uniform",
+        "denoise": 1.0,
+    },
+    "realistic": {
+        "id": "realistic",
+        "name": "写实·原版",
+        "checkpoint_key": "realistic_vision",
+        "use_lcm_lora": False,
+        "steps": 20,
+        "cfg": 7.0,
+        "sampler_name": "euler_ancestral",
+        "scheduler": "normal",
+        "denoise": 1.0,
+    },
+    "majicmix": {
+        "id": "majicmix",
+        "name": "人像·东方",
+        "checkpoint_key": "majicmix",
+        "use_lcm_lora": False,
+        "steps": 20,
+        "cfg": 7.0,
+        "sampler_name": "euler_ancestral",
+        "scheduler": "normal",
+        "denoise": 1.0,
+    },
+    "dreamshaper": {
+        "id": "dreamshaper",
+        "name": "通用·梦境",
+        "checkpoint_key": "dreamshaper",
+        "use_lcm_lora": False,
+        "steps": 20,
+        "cfg": 7.0,
+        "sampler_name": "euler_ancestral",
+        "scheduler": "normal",
+        "denoise": 1.0,
+    },
+    "counterfeit": {
+        "id": "counterfeit",
+        "name": "动漫",
+        "checkpoint_key": "counterfeit",
+        "use_lcm_lora": False,
+        "steps": 20,
+        "cfg": 7.0,
+        "sampler_name": "euler_ancestral",
+        "scheduler": "normal",
+        "denoise": 1.0,
+    },
+}
+
+DEFAULT_MODEL_ID = os.getenv("DEFAULT_MODEL_ID", "realistic-lcm")
+
 # Skip model download (for contract testing / offline builds)
 SKIP_MODEL_DOWNLOAD = os.getenv("SKIP_MODEL_DOWNLOAD", "0").lower() in ("1", "true", "yes")
 
@@ -49,11 +170,6 @@ SKIP_MODEL_DOWNLOAD = os.getenv("SKIP_MODEL_DOWNLOAD", "0").lower() in ("1", "tr
 FIXED_NEGATIVE_PROMPT = (
     "deformed, distorted, disfigured, blurry, low-res, low quality, watermark, text, logo"
 )
-SAMPLER_NAME = "lcm"
-SCHEDULER = "sgm_uniform"
-STEPS = 8
-CFG = 1.5
-DENOISE = 1.0
 
 SIZES = {
     "portrait": {"width": 512, "height": 768},
