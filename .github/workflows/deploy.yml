@@ -1,15 +1,8 @@
 name: Deploy
 
-# 模板仓专属例外（规格 §8）：本模板没有生产目标，deploy 只接受手动触发（团队不运行）。
-# 从本模板生成新项目后，按 README「生成清单」第 6 步删掉这一例外，改成 push main 触发自动部署——
-# 生成的项目不得保留这一例外：
-#
-#   on:
-#     push:
-#       branches: [main]
-
 on:
-  workflow_dispatch:
+  push:
+    branches: [main]
 
 run-name: Deploy ${{ github.ref_name }} by ${{ github.actor }}
 
