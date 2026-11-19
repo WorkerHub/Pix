@@ -13,7 +13,11 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { MACHINE_AUTH_HEADER } from "../src/config/project"
-import { buildMachineUrl } from "../src/routes/gen"
+import {
+  buildMachineUrl,
+  extractMachineToken,
+  machineHeaders
+} from "../src/routes/gen"
 import {
   activePrefix,
   initializedContext,
@@ -23,7 +27,7 @@ import {
 } from "./support/app"
 
 const MOCK_SERVER_URL =
-  "https://mock-machine.test:8190/base?token=instabox_secret"
+  "https://mock-machine.test:8190/base?_token=instabox_secret"
 const MOCK_SERVER_SECRET = "shared-secret-123"
 
 describe("buildMachineUrl", () => {
@@ -39,21 +43,87 @@ describe("buildMachineUrl", () => {
     )
   })
 
-  it("保留子路径与 query string 中的平台令牌", () => {
+  it("拼装子路径时去除基地址中的 query string 平台令牌（生成干净 URL）", () => {
     expect(
       buildMachineUrl(
-        "https://instabox.example.com/port/8190?token=access_token_abc",
+        "https://instabox.example.com/port/8190?_token=access_token_abc",
         "/generate"
       )
-    ).toBe(
-      "https://instabox.example.com/port/8190/generate?token=access_token_abc"
-    )
+    ).toBe("https://instabox.example.com/port/8190/generate")
   })
 
   it("支持不带前置斜杠的子路径", () => {
     expect(buildMachineUrl("http://127.0.0.1:8190", "status/job-1")).toBe(
       "http://127.0.0.1:8190/status/job-1"
     )
+  })
+})
+
+describe("extractMachineToken", () => {
+  it("成功从带 _token 的基地址中提取平台令牌", () => {
+    expect(
+      extractMachineToken(
+        "https://instabox.example.com/port/8190?_token=secret_tok_123"
+      )
+    ).toBe("secret_tok_123")
+  })
+
+  it("基地址包含多个查询参数时正确提取 _token", () => {
+    expect(
+      extractMachineToken(
+        "https://instabox.example.com/port/8190?foo=bar&_token=secret_tok_123&baz=qux"
+      )
+    ).toBe("secret_tok_123")
+  })
+
+  it("无 _token 或 _token 为空时返回 null", () => {
+    expect(
+      extractMachineToken("https://instabox.example.com/port/8190")
+    ).toBeNull()
+    expect(
+      extractMachineToken(
+        "https://instabox.example.com/port/8190?token=legacy_without_underscore"
+      )
+    ).toBeNull()
+    expect(
+      extractMachineToken("https://instabox.example.com/port/8190?_token=")
+    ).toBeNull()
+    expect(extractMachineToken(undefined)).toBeNull()
+  })
+})
+
+describe("machineHeaders", () => {
+  it("同时提供 secret 与带 _token 的基地址时同时携带两个头", () => {
+    const headers = machineHeaders(
+      "https://mock-machine.test:8190?_token=my_bearer_token",
+      "my_secret"
+    )
+    expect(headers).toEqual({
+      [MACHINE_AUTH_HEADER]: "my_secret",
+      Authorization: "Bearer my_bearer_token"
+    })
+  })
+
+  it("基地址不带 _token 时仅携带机器代理密钥头，不带 Authorization 头", () => {
+    const headers = machineHeaders("http://127.0.0.1:8190", "my_secret")
+    expect(headers).toEqual({
+      [MACHINE_AUTH_HEADER]: "my_secret"
+    })
+    expect(headers.Authorization).toBeUndefined()
+  })
+
+  it("未提供 secret 时仅携带 Authorization 头", () => {
+    const headers = machineHeaders(
+      "https://mock-machine.test:8190?_token=my_bearer_token"
+    )
+    expect(headers).toEqual({
+      Authorization: "Bearer my_bearer_token"
+    })
+    expect(headers[MACHINE_AUTH_HEADER]).toBeUndefined()
+  })
+
+  it("既无 secret 也无 _token 时返回空请求头对象", () => {
+    expect(machineHeaders("http://127.0.0.1:8190")).toEqual({})
   })
 })
 
@@ -137,14 +207,40 @@ describe("GET /api/gen/health", () => {
     const body = (await res.json()) as Record<string, unknown>
     expect(body).toEqual({ online: true, ready: true })
 
-    // 验证请求机器的 URL 与请求头
+    // 验证请求机器的 URL 与请求头（干净 URL + Bearer 鉴权头）
     expect(fetchMock).toHaveBeenCalledTimes(1)
     const [callUrl, callInit] = fetchMock.mock.calls[0]
-    expect(callUrl).toBe(
-      "https://mock-machine.test:8190/base/health?token=instabox_secret"
-    )
+    expect(callUrl).toBe("https://mock-machine.test:8190/base/health")
     const reqHeaders = (callInit?.headers ?? {}) as Record<string, string>
     expect(reqHeaders[MACHINE_AUTH_HEADER]).toBe(MOCK_SERVER_SECRET)
+    expect(reqHeaders.Authorization).toBe("Bearer instabox_secret")
+  })
+
+  it("当 PIX_SERVER_URL 不含 _token 时，健康检查不携带 Authorization 头", async () => {
+    const plainCtx = await initializedContext({
+      PIX_SERVER_URL: "http://127.0.0.1:8190",
+      PIX_SERVER_SECRET: MOCK_SERVER_SECRET
+    })
+    const session = await seedSession(plainCtx.db, activePrefix(plainCtx.env))
+
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(JSON.stringify({ ok: true, comfyReady: true }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" }
+      })
+    )
+
+    const res = await request(plainCtx.env, "/api/gen/health", {
+      headers: { Cookie: session.cookie }
+    })
+
+    expect(res.status).toBe(200)
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    const [callUrl, callInit] = fetchMock.mock.calls[0]
+    expect(callUrl).toBe("http://127.0.0.1:8190/health")
+    const reqHeaders = (callInit?.headers ?? {}) as Record<string, string>
+    expect(reqHeaders[MACHINE_AUTH_HEADER]).toBe(MOCK_SERVER_SECRET)
+    expect(reqHeaders.Authorization).toBeUndefined()
   })
 
   it('通了但 ComfyUI 未就绪 → 200 {"online":true,"ready":false}', async () => {
@@ -338,14 +434,42 @@ describe("POST /api/gen 正常转发与形状映射（一律 HTTP 200）", () =>
 
     expect(fetchMock).toHaveBeenCalledTimes(1)
     const [callUrl, callInit] = fetchMock.mock.calls[0]
-    expect(callUrl).toBe(
-      "https://mock-machine.test:8190/base/generate?token=instabox_secret"
-    )
+    expect(callUrl).toBe("https://mock-machine.test:8190/base/generate")
     const reqHeaders = (callInit?.headers ?? {}) as Record<string, string>
     expect(reqHeaders[MACHINE_AUTH_HEADER]).toBe(MOCK_SERVER_SECRET)
+    expect(reqHeaders.Authorization).toBe("Bearer instabox_secret")
     expect(callInit?.body).toBe(
       JSON.stringify({ prompt: "cyberpunk city", size: "square" })
     )
+  })
+
+  it("当 PIX_SERVER_URL 不含 _token 时，生图请求不携带 Authorization 头", async () => {
+    const plainCtx = await initializedContext({
+      PIX_SERVER_URL: "http://127.0.0.1:8190",
+      PIX_SERVER_SECRET: MOCK_SERVER_SECRET
+    })
+    const session = await seedSession(plainCtx.db, activePrefix(plainCtx.env))
+
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(JSON.stringify({ jobId: "job-plain-1" }), {
+        status: 202,
+        headers: { "Content-Type": "application/json" }
+      })
+    )
+
+    const res = await request(plainCtx.env, "/api/gen", {
+      method: "POST",
+      headers: { Cookie: session.cookie, "Content-Type": "application/json" },
+      body: JSON.stringify({ prompt: "a cat", size: "portrait" })
+    })
+
+    expect(res.status).toBe(200)
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    const [callUrl, callInit] = fetchMock.mock.calls[0]
+    expect(callUrl).toBe("http://127.0.0.1:8190/generate")
+    const reqHeaders = (callInit?.headers ?? {}) as Record<string, string>
+    expect(reqHeaders[MACHINE_AUTH_HEADER]).toBe(MOCK_SERVER_SECRET)
+    expect(reqHeaders.Authorization).toBeUndefined()
   })
 
   it("正好 1000 字符 prompt 能够成功转发", async () => {
@@ -481,8 +605,8 @@ describe("GET /api/gen/status/:jobId 状态转发", () => {
       { state: "error", error: "OOM killed" }
     ]
 
-    for (const expected of states) {
-      vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+    for (const [index, expected] of states.entries()) {
+      const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
         new Response(JSON.stringify(expected), {
           status: 200,
           headers: { "Content-Type": "application/json" }
@@ -496,6 +620,17 @@ describe("GET /api/gen/status/:jobId 状态转发", () => {
       expect(res.status).toBe(200)
       const body = (await res.json()) as Record<string, unknown>
       expect(body).toEqual(expected)
+
+      if (index === 0) {
+        expect(fetchMock).toHaveBeenCalledTimes(1)
+        const [callUrl, callInit] = fetchMock.mock.calls[0]
+        expect(callUrl).toBe(
+          "https://mock-machine.test:8190/base/status/job-123"
+        )
+        const reqHeaders = (callInit?.headers ?? {}) as Record<string, string>
+        expect(reqHeaders[MACHINE_AUTH_HEADER]).toBe(MOCK_SERVER_SECRET)
+        expect(reqHeaders.Authorization).toBe("Bearer instabox_secret")
+      }
     }
   })
 
@@ -563,7 +698,7 @@ describe("GET /api/gen/image/:jobId 取图流式透传与无公共缓存", () =>
 
   it("完成时：流式透传 image/png，带 no-store / private 缓存头", async () => {
     const fakeImageData = new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10])
-    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
       new Response(fakeImageData, {
         status: 200,
         headers: { "Content-Type": "image/png" }
@@ -582,6 +717,15 @@ describe("GET /api/gen/image/:jobId 取图流式透传与无公共缓存", () =>
 
     const arrayBuffer = await res.arrayBuffer()
     expect(new Uint8Array(arrayBuffer)).toEqual(fakeImageData)
+
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    const [callUrl, callInit] = fetchMock.mock.calls[0]
+    expect(callUrl).toBe(
+      "https://mock-machine.test:8190/base/image/job-finished"
+    )
+    const reqHeaders = (callInit?.headers ?? {}) as Record<string, string>
+    expect(reqHeaders[MACHINE_AUTH_HEADER]).toBe(MOCK_SERVER_SECRET)
+    expect(reqHeaders.Authorization).toBe("Bearer instabox_secret")
   })
 
   it("未完成时：机器返回 409 透传 409", async () => {
