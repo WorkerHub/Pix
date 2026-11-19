@@ -13,6 +13,7 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { MACHINE_AUTH_HEADER } from "../src/config/project"
+import { findGenerationByJobId } from "../src/db/queries/generations"
 import {
   buildMachineUrl,
   extractMachineToken,
@@ -25,6 +26,8 @@ import {
   seedSession,
   type TestContext
 } from "./support/app"
+import { MockAi } from "./support/mock-ai"
+import type { MockR2Bucket } from "./support/mock-r2"
 
 const MOCK_SERVER_URL =
   "https://mock-machine.test:8190/base?_token=instabox_secret"
@@ -395,6 +398,23 @@ describe("POST /api/gen 服务端校验", () => {
 
     expect(fetchSpy).not.toHaveBeenCalled()
   })
+
+  it("model 非法（不在五个允许 ID 中）返回 400 不转发", async () => {
+    const fetchSpy = vi.spyOn(globalThis, "fetch")
+
+    const res = await request(ctx.env, "/api/gen", {
+      method: "POST",
+      headers: { Cookie: authCookie, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        prompt: "valid prompt",
+        size: "portrait",
+        model: "not-a-model"
+      })
+    })
+
+    expect(res.status).toBe(400)
+    expect(fetchSpy).not.toHaveBeenCalled()
+  })
 })
 
 describe("POST /api/gen 正常转发与形状映射（一律 HTTP 200）", () => {
@@ -430,7 +450,11 @@ describe("POST /api/gen 正常转发与形状映射（一律 HTTP 200）", () =>
 
     expect(res.status).toBe(200)
     const body = (await res.json()) as Record<string, unknown>
-    expect(body).toEqual({ jobId: "job-abc-456" })
+    expect(body).toEqual({
+      jobId: "job-abc-456",
+      translated: false,
+      effectivePrompt: "cyberpunk city"
+    })
 
     expect(fetchMock).toHaveBeenCalledTimes(1)
     const [callUrl, callInit] = fetchMock.mock.calls[0]
@@ -439,7 +463,40 @@ describe("POST /api/gen 正常转发与形状映射（一律 HTTP 200）", () =>
     expect(reqHeaders[MACHINE_AUTH_HEADER]).toBe(MOCK_SERVER_SECRET)
     expect(reqHeaders.Authorization).toBe("Bearer instabox_secret")
     expect(callInit?.body).toBe(
-      JSON.stringify({ prompt: "cyberpunk city", size: "square" })
+      JSON.stringify({
+        prompt: "cyberpunk city",
+        size: "square",
+        model: "realistic-lcm"
+      })
+    )
+  })
+
+  it("显式 model 透传给机器请求体", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(JSON.stringify({ jobId: "job-model-1" }), {
+        status: 202,
+        headers: { "Content-Type": "application/json" }
+      })
+    )
+
+    const res = await request(ctx.env, "/api/gen", {
+      method: "POST",
+      headers: { Cookie: authCookie, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        prompt: "a cat",
+        size: "portrait",
+        model: "dreamshaper"
+      })
+    })
+
+    expect(res.status).toBe(200)
+    const [, callInit] = fetchMock.mock.calls[0]
+    expect(callInit?.body).toBe(
+      JSON.stringify({
+        prompt: "a cat",
+        size: "portrait",
+        model: "dreamshaper"
+      })
     )
   })
 
@@ -489,7 +546,64 @@ describe("POST /api/gen 正常转发与形状映射（一律 HTTP 200）", () =>
 
     expect(res.status).toBe(200)
     const body = (await res.json()) as Record<string, unknown>
-    expect(body).toEqual({ jobId: "job-exact-1000" })
+    expect(body).toEqual({
+      jobId: "job-exact-1000",
+      translated: false,
+      effectivePrompt: exactPrompt
+    })
+  })
+
+  it("中文 prompt 触发 Workers AI 翻译，返回 translated=true 及有效英文提示词，并向机器发送翻译后提示词", async () => {
+    const ai = new MockAi(async () => ({
+      translated_text: "Cyberpunk panda warrior"
+    }))
+    const aiCtx = await initializedContext({
+      PIX_SERVER_URL: MOCK_SERVER_URL,
+      PIX_SERVER_SECRET: MOCK_SERVER_SECRET,
+      AI: ai as unknown as Ai
+    })
+    const session = await seedSession(aiCtx.db, activePrefix(aiCtx.env))
+
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(JSON.stringify({ jobId: "job-panda-1" }), {
+        status: 202,
+        headers: { "Content-Type": "application/json" }
+      })
+    )
+
+    const res = await request(aiCtx.env, "/api/gen", {
+      method: "POST",
+      headers: { Cookie: session.cookie, "Content-Type": "application/json" },
+      body: JSON.stringify({ prompt: "赛博朋克熊猫战士", size: "portrait" })
+    })
+
+    expect(res.status).toBe(200)
+    const body = (await res.json()) as Record<string, unknown>
+    expect(body).toEqual({
+      jobId: "job-panda-1",
+      translated: true,
+      effectivePrompt: "Cyberpunk panda warrior"
+    })
+
+    const [, callInit] = fetchMock.mock.calls[0]
+    expect(callInit?.body).toBe(
+      JSON.stringify({
+        prompt: "Cyberpunk panda warrior",
+        size: "portrait",
+        model: "realistic-lcm"
+      })
+    )
+
+    const r2 = aiCtx.env.IMAGES as unknown as MockR2Bucket
+    const pendingObj = await r2.get("_pending/job-panda-1.json")
+    expect(pendingObj).not.toBeNull()
+    const meta = await pendingObj?.json()
+    expect(meta).toMatchObject({
+      userId: session.userId,
+      promptOriginal: "赛博朋克熊猫战士",
+      promptEffective: "Cyberpunk panda warrior",
+      size: "portrait"
+    })
   })
 
   it('机器忙：机器回 409 → 200 {"busy":true}', async () => {
@@ -781,5 +895,139 @@ describe("GET /api/gen/image/:jobId 取图流式透传与无公共缓存", () =>
     })
 
     expect(res.status).toBe(502)
+  })
+
+  it("完成时：持久化图片到 R2 与 D1，消费并清理 pending 元数据，且幂等", async () => {
+    const r2 = ctx.env.IMAGES as unknown as MockR2Bucket
+    const prefix = activePrefix(ctx.env)
+    const session = await seedSession(ctx.db, prefix, {
+      email: "persist-user@example.test"
+    })
+
+    // 预先存入 pending 元数据
+    await r2.put(
+      "_pending/job-persist-1.json",
+      JSON.stringify({
+        userId: session.userId,
+        promptOriginal: "赛博猫",
+        promptEffective: "cyber cat",
+        size: "portrait",
+        createdAt: "2026-11-19T10:00:00.000Z"
+      })
+    )
+
+    const fakeImageData = new Uint8Array([137, 80, 78, 71, 99, 88])
+    vi.spyOn(globalThis, "fetch").mockImplementation(
+      async () =>
+        new Response(fakeImageData, {
+          status: 200,
+          headers: { "Content-Type": "image/png" }
+        })
+    )
+
+    const res = await request(ctx.env, "/api/gen/image/job-persist-1", {
+      headers: { Cookie: session.cookie }
+    })
+    expect(res.status).toBe(200)
+
+    // R2 中已持久化到 <userId>/<jobId>.png
+    const savedObj = await r2.get(`${session.userId}/job-persist-1.png`)
+    expect(savedObj).not.toBeNull()
+    expect(new Uint8Array(await savedObj!.arrayBuffer())).toEqual(fakeImageData)
+
+    // D1 记录已落库
+    const record = await findGenerationByJobId(
+      ctx.env.DB,
+      prefix,
+      "job-persist-1"
+    )
+    expect(record).not.toBeNull()
+    expect(record).toMatchObject({
+      user_id: session.userId,
+      job_id: "job-persist-1",
+      prompt_original: "赛博猫",
+      prompt_effective: "cyber cat",
+      size: "portrait",
+      r2_key: `${session.userId}/job-persist-1.png`
+    })
+
+    // pending 元数据已清理
+    expect(await r2.get("_pending/job-persist-1.json")).toBeNull()
+
+    // 再次调用该接口：幂等，不会抛错或重复插入
+    const res2 = await request(ctx.env, "/api/gen/image/job-persist-1", {
+      headers: { Cookie: session.cookie }
+    })
+    expect(res2.status).toBe(200)
+  })
+
+  it("pending 元数据缺失时不记历史：照常回图，不落 R2 / D1 空记录", async () => {
+    const r2 = ctx.env.IMAGES as unknown as MockR2Bucket
+    const prefix = activePrefix(ctx.env)
+    const session = await seedSession(ctx.db, prefix, {
+      email: "no-pending@example.test"
+    })
+
+    const fakeImageData = new Uint8Array([9, 9, 9])
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(fakeImageData, {
+        status: 200,
+        headers: { "Content-Type": "image/png" }
+      })
+    )
+
+    const res = await request(ctx.env, "/api/gen/image/job-no-pending", {
+      headers: { Cookie: session.cookie }
+    })
+    expect(res.status).toBe(200)
+
+    // 不落任何 R2 对象、不写 D1 记录（不产生 prompt 为空的废记录）
+    expect(await r2.get(`${session.userId}/job-no-pending.png`)).toBeNull()
+    const record = await findGenerationByJobId(
+      ctx.env.DB,
+      prefix,
+      "job-no-pending"
+    )
+    expect(record).toBeNull()
+  })
+
+  it("当 R2 或 D1 持久化发生异常时，不阻塞图片正常流式返回（容错保障）", async () => {
+    const r2 = ctx.env.IMAGES as unknown as MockR2Bucket
+    const prefix = activePrefix(ctx.env)
+    const session = await seedSession(ctx.db, prefix, {
+      email: "fail-storage@example.test"
+    })
+
+    // 预存 pending 元数据，确保代码走到 R2 put 路径（而非 pending 缺失提前返回）
+    await r2.put(
+      "_pending/job-fail-storage.json",
+      JSON.stringify({
+        userId: session.userId,
+        promptOriginal: "fail storage",
+        promptEffective: "fail storage",
+        size: "square"
+      })
+    )
+
+    // 破坏 put 方法以模拟 R2 故障
+    vi.spyOn(r2, "put").mockRejectedValue(new Error("R2 storage unavailable"))
+
+    const fakeImageData = new Uint8Array([1, 2, 3, 4])
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(fakeImageData, {
+        status: 200,
+        headers: { "Content-Type": "image/png" }
+      })
+    )
+
+    const res = await request(ctx.env, "/api/gen/image/job-fail-storage", {
+      headers: { Cookie: session.cookie }
+    })
+
+    // 即使存储异常，向客户端依然返回 200 与图片流
+    expect(res.status).toBe(200)
+    expect(res.headers.get("content-type")).toBe("image/png")
+    const bytes = new Uint8Array(await res.arrayBuffer())
+    expect(bytes).toEqual(fakeImageData)
   })
 })

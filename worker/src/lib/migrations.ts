@@ -9,8 +9,13 @@
  * 语句之间用 `;` 分隔，语句内部不得出现 `;`（含字符串字面量）。
  * 表名/索引名一律经 tables.ts（基线迁移经 schema.ts 的 `{prefix}` 占位）拼装，不写死前缀。
  */
-import { SCHEMA_INDEXES, SCHEMA_TABLES, baselineStatements } from "./schema"
-import { tableName } from "./tables"
+import {
+  SCHEMA_INDEXES,
+  SCHEMA_TABLES,
+  baselineStatements,
+  generationsStatements
+} from "./schema"
+import { generationsTable, tableName } from "./tables"
 
 /** 迁移执行时能拿到的东西：库与生效前缀。 */
 export interface MigrationContext {
@@ -27,6 +32,8 @@ export interface Migration {
 
 /** 唯一基线迁移名（坍缩为单一 V1）。 */
 export const BASELINE_MIGRATION = "schema_v1"
+/** 业务增量迁移名：生图历史索引表。 */
+export const GENERATIONS_MIGRATION = "schema_v2"
 
 export function getMigrations(prefix: string): Migration[] {
   const statements = baselineStatements(prefix)
@@ -48,5 +55,17 @@ export function getMigrations(prefix: string): Migration[] {
     }
   }
 
-  return [{ name: BASELINE_MIGRATION, sql }]
+  const v2Statements = generationsStatements(prefix)
+  const v2Sql = v2Statements.join(";\n\n")
+  const expectedGenTable = generationsTable(prefix)
+  if (!v2Sql.includes(expectedGenTable)) {
+    throw new Error(
+      `migration ${GENERATIONS_MIGRATION} is missing table ${expectedGenTable}`
+    )
+  }
+
+  return [
+    { name: BASELINE_MIGRATION, sql },
+    { name: GENERATIONS_MIGRATION, sql: v2Sql }
+  ]
 }

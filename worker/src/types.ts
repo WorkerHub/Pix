@@ -8,6 +8,10 @@ export interface Env {
   DB: D1Database
   /** Workers Static Assets：前端构建产物 web/dist。 */
   ASSETS: Fetcher
+  /** 业务文件对象存储（R2）：专属 bucket（见 wrangler.toml 的 IMAGES 绑定），用于持久化出图成品及暂存元数据。 */
+  IMAGES?: R2Bucket
+  /** Cloudflare Workers AI 绑定（模型 @cf/meta/m2m100-1.2b 用于提示词翻译）。 */
+  AI?: Ai
   /** setup / 数据库维护的 X-Setup-Secret 令牌（仓库级 secret）。 */
   SETUP_SECRET?: string
   /**
