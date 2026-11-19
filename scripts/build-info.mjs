@@ -43,9 +43,10 @@ function commitCount() {
 
 function resolveVersion() {
   // 有 tag：v1.2.3-4-gabc1234 → v1.2.3-4-abc1234（去掉 describe 的 g 前缀）
-  const described = git(["describe", "--tags", "--long"])
+  // 必须只匹配 v* 语义版本标签，避免 docker-publish 产生的 server-v* 等其它标签污染版本号
+  const described = git(["describe", "--tags", "--long", "--match", "v[0-9]*"])
   if (described) {
-    const matched = described.match(/^(.+)-(\d+)-g([0-9a-f]+)$/)
+    const matched = described.match(/^(v\d+\.\d+\.\d+)-(\d+)-g([0-9a-f]+)$/)
     if (matched) {
       return {
         version: `${matched[1]}-${matched[2]}-${matched[3]}`,
