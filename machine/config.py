@@ -18,6 +18,10 @@ MODELS_CHECKPOINTS_DIR = os.getenv(
     "MODELS_CHECKPOINTS_DIR",
     os.path.join(COMFYUI_DIR, "models", "checkpoints"),
 )
+MODELS_LORAS_DIR = os.getenv(
+    "MODELS_LORAS_DIR",
+    os.path.join(COMFYUI_DIR, "models", "loras"),
+)
 
 # Realistic Vision V6.0 B1 VAE Baked Model (Pinned)
 DEFAULT_MODEL_NAME = "Realistic_Vision_V6.0_B1_VAE.safetensors"
@@ -28,6 +32,16 @@ MODEL_NAME = os.getenv("MODEL_NAME", DEFAULT_MODEL_NAME)
 MODEL_DOWNLOAD_URL = os.getenv("MODEL_DOWNLOAD_URL", DEFAULT_MODEL_URL)
 MODEL_SHA256 = os.getenv("MODEL_SHA256", DEFAULT_MODEL_SHA256)
 
+# LCM-LoRA (SD1.5) for LCM acceleration (Pinned)
+# Official LoRA: latent-consistency/lcm-lora-sdv1-5, file pytorch_lora_weights.safetensors
+DEFAULT_LORA_NAME = "lcm-lora-sdv1-5.safetensors"
+DEFAULT_LORA_URL = "https://huggingface.co/latent-consistency/lcm-lora-sdv1-5/resolve/main/pytorch_lora_weights.safetensors"
+DEFAULT_LORA_SHA256 = "8f90d840e075ff588a58e22c6586e2ae9a6f7922996ee6649a7f01072333afe4"
+
+LORA_NAME = os.getenv("LORA_NAME", DEFAULT_LORA_NAME)
+LORA_DOWNLOAD_URL = os.getenv("LORA_DOWNLOAD_URL", DEFAULT_LORA_URL)
+LORA_SHA256 = os.getenv("LORA_SHA256", DEFAULT_LORA_SHA256)
+
 # Skip model download (for contract testing / offline builds)
 SKIP_MODEL_DOWNLOAD = os.getenv("SKIP_MODEL_DOWNLOAD", "0").lower() in ("1", "true", "yes")
 
@@ -35,10 +49,10 @@ SKIP_MODEL_DOWNLOAD = os.getenv("SKIP_MODEL_DOWNLOAD", "0").lower() in ("1", "tr
 FIXED_NEGATIVE_PROMPT = (
     "deformed, distorted, disfigured, blurry, low-res, low quality, watermark, text, logo"
 )
-SAMPLER_NAME = "euler_ancestral"
-SCHEDULER = "normal"
-STEPS = 20
-CFG = 7.0
+SAMPLER_NAME = "lcm"
+SCHEDULER = "sgm_uniform"
+STEPS = 8
+CFG = 1.5
 DENOISE = 1.0
 
 SIZES = {
