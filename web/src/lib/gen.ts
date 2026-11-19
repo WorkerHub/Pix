@@ -7,7 +7,7 @@ export const GEN_POLL_INTERVAL_MS = 5000
 export const GEN_TIMEOUT_MS = 12 * 60 * 1000
 
 /** localStorage 任务持久化存储键 */
-export const GEN_JOB_STORAGE_KEY = "pix.gen-job"
+export const GEN_JOB_STORAGE_KEY = "app-gen-job"
 
 export interface StoredJob {
   jobId: string

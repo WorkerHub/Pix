@@ -18,7 +18,7 @@ describe("gen helpers", () => {
   it("常量定义符合契约", () => {
     expect(GEN_POLL_INTERVAL_MS).toBe(5000)
     expect(GEN_TIMEOUT_MS).toBe(12 * 60 * 1000)
-    expect(GEN_JOB_STORAGE_KEY).toBe("pix.gen-job")
+    expect(GEN_JOB_STORAGE_KEY).toBe("app-gen-job")
   })
 
   describe("readStoredJob / writeStoredJob / clearStoredJob", () => {
