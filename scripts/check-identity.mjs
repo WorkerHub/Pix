@@ -137,7 +137,7 @@ if (projectName && projectSlug) {
     }))
   for (const relative of tracked) {
     if (ALLOWED.has(relative)) continue
-    // 机器端部署配置与镜像服务代码（pix-server / X-Pix-Secret 契约）
+    // 机器端部署配置与镜像服务代码（pix-service / X-Pix-Secret 契约）
     if (relative.startsWith("machine/")) continue
     if (BINARY_EXTENSIONS.has(path.extname(relative).toLowerCase())) continue
     const content = readFile(relative)
