@@ -235,9 +235,10 @@ export const MODEL_OPTIONS: GenerateModel[] = [
 
 /** 模型展示文案的 i18n key；未知或缺失时回落默认模型的 key。 */
 export function modelLabelKey(model?: string | null): string {
-  const m = model && MODEL_OPTIONS.includes(model as GenerateModel)
-    ? model
-    : DEFAULT_MODEL
+  const m =
+    model && MODEL_OPTIONS.includes(model as GenerateModel)
+      ? model
+      : DEFAULT_MODEL
   return `generate.model.${m}`
 }
 

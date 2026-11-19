@@ -1,9 +1,13 @@
-import React, { useState, useEffect, useRef } from "react"
+import { useState, useEffect } from "react"
 import { useTranslation } from "react-i18next"
 import { genImageUrl } from "@/lib/api"
-import { modelLabelKey, type GenerateModel, type GenerateSize } from "@/lib/api-types"
 import {
-  BattleStageInfo,
+  modelLabelKey,
+  type GenerateModel,
+  type GenerateSize
+} from "@/lib/api-types"
+import {
+  type BattleStageInfo,
   BATTLE_STAGES,
   formatGameTime
 } from "@/lib/arcade-engine"
@@ -23,6 +27,7 @@ export interface ArcadeScreenProps {
   score: number
   joyVec: { x: number; y: number }
   attackTrigger: number
+  isDone?: boolean
   onScoreUpdate: (score: number, hits: number, hurts: number) => void
   onBattleExplode: () => void
   onAgain: () => void
@@ -30,6 +35,9 @@ export interface ArcadeScreenProps {
   onCheckOnce: () => void
   onRegenerate: () => void
 }
+
+const SEG = 20
+const SEG_KEYS = Array.from({ length: SEG }, (_, i) => `hp-seg-${i + 1}`)
 
 export function ArcadeScreen({
   phase,
@@ -43,6 +51,7 @@ export function ArcadeScreen({
   score,
   joyVec,
   attackTrigger,
+  isDone,
   onScoreUpdate,
   onBattleExplode,
   onAgain,
@@ -52,7 +61,9 @@ export function ArcadeScreen({
 }: ArcadeScreenProps) {
   const { t } = useTranslation()
   const [battleProgress, setBattleProgress] = useState(0)
-  const [battleStage, setBattleStage] = useState<BattleStageInfo>(BATTLE_STAGES[0])
+  const [battleStage, setBattleStage] = useState<BattleStageInfo>(
+    BATTLE_STAGES[0]
+  )
   const [screenFlicker, setScreenFlicker] = useState(false)
   const [screenShake, setScreenShake] = useState(false)
   const [confettiPieces, setConfettiPieces] = useState<
@@ -61,6 +72,7 @@ export function ArcadeScreen({
 
   // 画面状态切换时闪烁一次 CRT
   useEffect(() => {
+    if (!phase) return
     setScreenFlicker(true)
     const t = setTimeout(() => setScreenFlicker(false), 200)
     return () => clearTimeout(t)
@@ -109,7 +121,6 @@ export function ArcadeScreen({
   }
 
   // 20 格 Boss 血条
-  const SEG = 20
   const filledSegs = Math.round(((100 - battleProgress) / 100) * SEG)
 
   // 屏幕 HUD 状态文案
@@ -212,10 +223,10 @@ export function ArcadeScreen({
               <ArcadeBattleCanvas
                 prompt={prompt}
                 submittedAt={submittedAt}
-                isDone={false}
+                isDone={Boolean(isDone)}
                 joyVec={joyVec}
                 attackTrigger={attackTrigger}
-                onScoreUpdate={(s, hits, hurts) => onScoreUpdate(s, hits, hurts)}
+                onScoreUpdate={onScoreUpdate}
                 onProgressUpdate={(p, stage) => {
                   setBattleProgress(p)
                   setBattleStage(stage)
@@ -231,13 +242,11 @@ export function ArcadeScreen({
               <span className="pct">{battleProgress}%</span>
             </div>
             <div className="hpbar" aria-hidden="true">
-              {Array.from({ length: SEG }).map((_, i) => (
+              {SEG_KEYS.map((segKey, i) => (
                 <i
-                  key={i}
+                  key={segKey}
                   className={
-                    i < filledSegs
-                      ? `fill${filledSegs <= 5 ? " low" : ""}`
-                      : ""
+                    i < filledSegs ? `fill${filledSegs <= 5 ? " low" : ""}` : ""
                   }
                 />
               ))}
@@ -384,7 +393,9 @@ export function ArcadeScreen({
           <section className="view">
             <div role="alert" className="terminal-box">
               <div className="terminal-title">! GENERATION ERROR !</div>
-              <p className="terminal-msg">{errorMessage || t("generate.error")}</p>
+              <p className="terminal-msg">
+                {errorMessage || t("generate.error")}
+              </p>
               <div className="terminal-actions">
                 <button
                   className="btn-arcade"

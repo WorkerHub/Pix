@@ -69,6 +69,9 @@ export function WorkbenchPage() {
   modelRef.current = model
   const scoreRef = useRef(score)
   scoreRef.current = score
+  const handleSubmitRef = useRef<(e?: React.FormEvent) => Promise<void>>(() =>
+    Promise.resolve()
+  )
 
   /**
    * 单次健康检查：
@@ -258,10 +261,10 @@ export function WorkbenchPage() {
     const updateJoyFromKeys = () => {
       let x = 0
       let y = 0
-      if (keysDown["ArrowLeft"] || keysDown["KeyA"]) x -= 1
-      if (keysDown["ArrowRight"] || keysDown["KeyD"]) x += 1
-      if (keysDown["ArrowUp"] || keysDown["KeyW"]) y -= 1
-      if (keysDown["ArrowDown"] || keysDown["KeyS"]) y += 1
+      if (keysDown.ArrowLeft || keysDown.KeyA) x -= 1
+      if (keysDown.ArrowRight || keysDown.KeyD) x += 1
+      if (keysDown.ArrowUp || keysDown.KeyW) y -= 1
+      if (keysDown.ArrowDown || keysDown.KeyS) y += 1
       const m = Math.sqrt(x * x + y * y)
       if (m > 0) {
         setJoyVec({ x: x / m, y: y / m })
@@ -274,7 +277,7 @@ export function WorkbenchPage() {
       if (focusInPrompt()) {
         if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
           e.preventDefault()
-          void handleSubmit()
+          void handleSubmitRef.current()
         }
         return
       }
@@ -307,7 +310,7 @@ export function WorkbenchPage() {
         const a = document.activeElement
         if (a?.tagName === "BUTTON") return
         e.preventDefault()
-        void handleSubmit()
+        void handleSubmitRef.current()
       }
     }
 
@@ -397,6 +400,7 @@ export function WorkbenchPage() {
       setErrorMessage(describeApiError(t, err))
     }
   }
+  handleSubmitRef.current = handleSubmit
 
   /** 离线态或启动态「重新检查」按钮点击 */
   const handleRecheckHealth = async () => {

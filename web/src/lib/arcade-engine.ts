@@ -17,11 +17,31 @@ export interface BattleStageInfo {
 }
 
 export const BATTLE_STAGES: BattleStageInfo[] = [
-  { until: 20, textKey: "arcade.stage.summoning", step: "STAGE 1 / 4 · SUMMONING" },
-  { until: 50, textKey: "arcade.stage.takingShape", step: "STAGE 2 / 4 · TAKING SHAPE" },
-  { until: 80, textKey: "arcade.stage.revealing", step: "STAGE 3 / 4 · REVEALING" },
-  { until: 96, textKey: "arcade.stage.finalPhase", step: "STAGE 4 / 4 · FINAL PHASE" },
-  { until: 101, textKey: "arcade.stage.finishing", step: "STAGE 4 / 4 · FINISHING" }
+  {
+    until: 20,
+    textKey: "arcade.stage.summoning",
+    step: "STAGE 1 / 4 · SUMMONING"
+  },
+  {
+    until: 50,
+    textKey: "arcade.stage.takingShape",
+    step: "STAGE 2 / 4 · TAKING SHAPE"
+  },
+  {
+    until: 80,
+    textKey: "arcade.stage.revealing",
+    step: "STAGE 3 / 4 · REVEALING"
+  },
+  {
+    until: 96,
+    textKey: "arcade.stage.finalPhase",
+    step: "STAGE 4 / 4 · FINAL PHASE"
+  },
+  {
+    until: 101,
+    textKey: "arcade.stage.finishing",
+    step: "STAGE 4 / 4 · FINISHING"
+  }
 ]
 
 export function getBattleStage(progress: number): BattleStageInfo {
@@ -82,7 +102,7 @@ export function calcEstimatedProgress(
 ): number {
   const expected = genDurationMs * 1.28
   const raw = Math.min(1, Math.max(0, elapsedMs) / expected)
-  return Math.min(95, Math.floor((1 - Math.pow(1 - raw, 1.6)) * 95))
+  return Math.min(95, Math.floor((1 - (1 - raw) ** 1.6) * 95))
 }
 
 /** 格式化街机计时器 MM:SS.s */
@@ -160,10 +180,26 @@ export function drawMonsterShape(
   // 手臂
   g.fillStyle = body
   g.beginPath()
-  g.ellipse(cx - S * 0.37, cy + S * 0.1, S * 0.085, S * 0.13, 0.5, 0, Math.PI * 2)
+  g.ellipse(
+    cx - S * 0.37,
+    cy + S * 0.1,
+    S * 0.085,
+    S * 0.13,
+    0.5,
+    0,
+    Math.PI * 2
+  )
   g.fill()
   g.beginPath()
-  g.ellipse(cx + S * 0.37, cy + S * 0.1, S * 0.085, S * 0.13, -0.5, 0, Math.PI * 2)
+  g.ellipse(
+    cx + S * 0.37,
+    cy + S * 0.1,
+    S * 0.085,
+    S * 0.13,
+    -0.5,
+    0,
+    Math.PI * 2
+  )
   g.fill()
 
   // 爪子
@@ -187,10 +223,26 @@ export function drawMonsterShape(
   // 双脚
   g.fillStyle = spike
   g.beginPath()
-  g.ellipse(cx - S * 0.17, cy + S * 0.335, S * 0.11, S * 0.05, 0, 0, Math.PI * 2)
+  g.ellipse(
+    cx - S * 0.17,
+    cy + S * 0.335,
+    S * 0.11,
+    S * 0.05,
+    0,
+    0,
+    Math.PI * 2
+  )
   g.fill()
   g.beginPath()
-  g.ellipse(cx + S * 0.17, cy + S * 0.335, S * 0.11, S * 0.05, 0, 0, Math.PI * 2)
+  g.ellipse(
+    cx + S * 0.17,
+    cy + S * 0.335,
+    S * 0.11,
+    S * 0.05,
+    0,
+    0,
+    Math.PI * 2
+  )
   g.fill()
 
   // 躯干
@@ -211,10 +263,26 @@ export function drawMonsterShape(
     g.shadowColor = "#ff2222"
     g.shadowBlur = S * 0.06
     g.beginPath()
-    g.ellipse(cx - S * 0.115, cy - S * 0.075, S * 0.042, S * 0.058, 0.25, 0, Math.PI * 2)
+    g.ellipse(
+      cx - S * 0.115,
+      cy - S * 0.075,
+      S * 0.042,
+      S * 0.058,
+      0.25,
+      0,
+      Math.PI * 2
+    )
     g.fill()
     g.beginPath()
-    g.ellipse(cx + S * 0.115, cy - S * 0.075, S * 0.042, S * 0.058, -0.25, 0, Math.PI * 2)
+    g.ellipse(
+      cx + S * 0.115,
+      cy - S * 0.075,
+      S * 0.042,
+      S * 0.058,
+      -0.25,
+      0,
+      Math.PI * 2
+    )
     g.fill()
     g.shadowBlur = 0
     return
@@ -223,10 +291,26 @@ export function drawMonsterShape(
   // 眼睛（白底 + 黑瞳 + 愤怒眉毛）
   g.fillStyle = "#ffffff"
   g.beginPath()
-  g.ellipse(cx - S * 0.115, cy - S * 0.075, S * 0.062, S * 0.075, 0, 0, Math.PI * 2)
+  g.ellipse(
+    cx - S * 0.115,
+    cy - S * 0.075,
+    S * 0.062,
+    S * 0.075,
+    0,
+    0,
+    Math.PI * 2
+  )
   g.fill()
   g.beginPath()
-  g.ellipse(cx + S * 0.115, cy - S * 0.075, S * 0.062, S * 0.075, 0, 0, Math.PI * 2)
+  g.ellipse(
+    cx + S * 0.115,
+    cy - S * 0.075,
+    S * 0.062,
+    S * 0.075,
+    0,
+    0,
+    Math.PI * 2
+  )
   g.fill()
 
   g.fillStyle = flash ? "#ffffff" : "#221d33"

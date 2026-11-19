@@ -1,4 +1,5 @@
-import React, { useRef, useState, useEffect } from "react"
+import type React from "react"
+import { useRef, useState } from "react"
 import { useTranslation } from "react-i18next"
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group"
 import {
@@ -7,10 +8,7 @@ import {
   type GenerateModel,
   type GenerateSize
 } from "@/lib/api-types"
-import {
-  PRESET_PROMPT_KEYS,
-  JOY_DRAG_MAX_PX
-} from "@/lib/arcade-engine"
+import { PRESET_PROMPT_KEYS, JOY_DRAG_MAX_PX } from "@/lib/arcade-engine"
 import {
   isSoundEnabled,
   setSoundEnabled,
@@ -152,12 +150,14 @@ export function ArcadeDeck({
     setSoundOn(next)
     setSoundEnabled(next)
     if (next) sndClick()
-    onToast(next ? t("arcade.deck.toast.soundOn") : t("arcade.deck.toast.soundOff"))
+    onToast(
+      next ? t("arcade.deck.toast.soundOn") : t("arcade.deck.toast.soundOff")
+    )
   }
 
-  // 开始按钮触发
-  const handleStartClick = (e: React.MouseEvent) => {
-    e.preventDefault()
+  // 触发开局流程（供按钮点击与回车共用）
+  const triggerStart = () => {
+    if (isFormDisabled || phase === "offline") return
     if (!prompt.trim()) {
       setConsoleShake(true)
       setTimeout(() => setConsoleShake(false), 400)
@@ -176,13 +176,10 @@ export function ArcadeDeck({
   return (
     <div className="deck">
       {/* 1. 摇杆区（仅负责移动） */}
-      <div className="joy-zone">
+      <section className="joy-zone" aria-label={t("arcade.deck.joyAria")}>
         <div
           className="joy-base"
           ref={joyBaseRef}
-          role="button"
-          tabIndex={0}
-          aria-label={t("arcade.deck.joyAria")}
           onPointerDown={handlePointerDown}
           onPointerMove={handlePointerMove}
           onPointerUp={handlePointerUp}
@@ -197,7 +194,7 @@ export function ArcadeDeck({
           <br />
           {t("arcade.deck.joyHint2")}
         </div>
-      </div>
+      </section>
 
       {/* 2. 提示词控制台 */}
       <div className={`console-box ${consoleShake ? "shake" : ""}`}>
@@ -216,12 +213,9 @@ export function ArcadeDeck({
           value={prompt}
           onChange={(e) => onPromptChange(e.target.value)}
           onKeyDown={(e) => {
-            if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
+            if (e.key === "Enter" && !e.shiftKey) {
               e.preventDefault()
-              if (!isSubmitDisabled) {
-                textareaRef.current?.blur()
-                onSubmit()
-              }
+              triggerStart()
             }
           }}
           placeholder={t("generate.prompt")}
@@ -313,7 +307,10 @@ export function ArcadeDeck({
           type="submit"
           className="start-entry"
           disabled={isSubmitDisabled}
-          onClick={handleStartClick}
+          onClick={(e) => {
+            e.preventDefault()
+            triggerStart()
+          }}
           aria-label={
             phase === "submitting"
               ? t("generate.submitting")
@@ -366,10 +363,34 @@ export function ArcadeDeck({
               aria-hidden="true"
             >
               <rect x="3" y="3" width="18" height="18" rx="4" />
-              <circle cx="8.5" cy="8.5" r="1.6" fill="currentColor" stroke="none" />
-              <circle cx="15.5" cy="15.5" r="1.6" fill="currentColor" stroke="none" />
-              <circle cx="15.5" cy="8.5" r="1.6" fill="currentColor" stroke="none" />
-              <circle cx="8.5" cy="15.5" r="1.6" fill="currentColor" stroke="none" />
+              <circle
+                cx="8.5"
+                cy="8.5"
+                r="1.6"
+                fill="currentColor"
+                stroke="none"
+              />
+              <circle
+                cx="15.5"
+                cy="15.5"
+                r="1.6"
+                fill="currentColor"
+                stroke="none"
+              />
+              <circle
+                cx="15.5"
+                cy="8.5"
+                r="1.6"
+                fill="currentColor"
+                stroke="none"
+              />
+              <circle
+                cx="8.5"
+                cy="15.5"
+                r="1.6"
+                fill="currentColor"
+                stroke="none"
+              />
             </svg>
           </button>
 
@@ -389,7 +410,11 @@ export function ArcadeDeck({
               strokeLinejoin="round"
               aria-hidden="true"
             >
-              <path d="M11 5 6 9H3v6h3l5 4z" fill="currentColor" stroke="none" />
+              <path
+                d="M11 5 6 9H3v6h3l5 4z"
+                fill="currentColor"
+                stroke="none"
+              />
               {soundOn && (
                 <>
                   <path d="M15.5 8.5a5 5 0 0 1 0 7" />

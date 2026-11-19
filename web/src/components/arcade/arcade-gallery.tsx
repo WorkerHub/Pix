@@ -1,4 +1,3 @@
-import React from "react"
 import { useTranslation } from "react-i18next"
 import { genImageUrl } from "@/lib/api"
 import {
@@ -27,7 +26,11 @@ export interface ArcadeGalleryProps {
 export function ArcadeGallery({ items, onSelect }: ArcadeGalleryProps) {
   const { t } = useTranslation()
   return (
-    <div className="gallery" id="gallery" aria-label={t("arcade.gallery.aria")}>
+    <section
+      className="gallery"
+      id="gallery"
+      aria-label={t("arcade.gallery.aria")}
+    >
       <h2>{t("arcade.gallery.title")}</h2>
       {items.length === 0 ? (
         <p className="empty" id="galleryEmpty">
@@ -46,7 +49,9 @@ export function ArcadeGallery({ items, onSelect }: ArcadeGalleryProps) {
                 ? "generate.sizePortrait"
                 : "generate.sizeSquare"
             )
-            const displayId = item.jobId ? `#${item.jobId.slice(-4)}` : `#${idx + 1}`
+            const displayId = item.jobId
+              ? `#${item.jobId.slice(-4)}`
+              : `#${idx + 1}`
 
             return (
               <button
@@ -61,12 +66,7 @@ export function ArcadeGallery({ items, onSelect }: ArcadeGalleryProps) {
                   "arcade.done.score"
                 )} ${item.score}`}
               >
-                <img
-                  src={genImageUrl(item.jobId)}
-                  alt=""
-                  role="presentation"
-                  loading="lazy"
-                />
+                <img src={genImageUrl(item.jobId)} alt="" loading="lazy" />
                 <span className="thumb-prompt">{item.prompt}</span>
                 <div className="thumb-badges">
                   <span className="thumb-model">{modelLabel}</span>
@@ -81,7 +81,6 @@ export function ArcadeGallery({ items, onSelect }: ArcadeGalleryProps) {
           })}
         </div>
       )}
-    </div>
+    </section>
   )
 }
-

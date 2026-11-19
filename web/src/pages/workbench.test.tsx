@@ -170,6 +170,7 @@ describe("生图页（规格 §5，单页，UI 极简）", () => {
 
     await waitFor(() => {
       expect(screen.getByText("生成中")).toBeInTheDocument()
+      expect(localStorage.getItem(GEN_JOB_STORAGE_KEY)).not.toBeNull()
     })
 
     // 推进 5 秒触发轮询
@@ -202,6 +203,7 @@ describe("生图页（规格 §5，单页，UI 极简）", () => {
 
     await waitFor(() => {
       expect(screen.getByText("生成中")).toBeInTheDocument()
+      expect(localStorage.getItem(GEN_JOB_STORAGE_KEY)).not.toBeNull()
     })
 
     await act(async () => {
@@ -442,10 +444,11 @@ describe("生图页（规格 §5，单页，UI 极简）", () => {
 
     await waitFor(() => {
       expect(screen.getByText("生成中")).toBeInTheDocument()
+      expect(localStorage.getItem(GEN_JOB_STORAGE_KEY)).not.toBeNull()
     })
 
     await act(async () => {
-      await vi.advanceTimersByTimeAsync(6000)
+      await vi.advanceTimersByTimeAsync(5000)
     })
 
     await waitFor(() => {

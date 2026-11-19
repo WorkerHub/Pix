@@ -1,19 +1,13 @@
-import React, { useEffect, useRef } from "react"
+import { useEffect, useRef } from "react"
 import { useTranslation } from "react-i18next"
 import {
   calcEstimatedProgress,
   drawMonsterShape,
   getBossSkin,
-  BossSkin,
-  BattleStageInfo,
+  type BattleStageInfo,
   getBattleStage
 } from "@/lib/arcade-engine"
-import {
-  sndShoot,
-  sndHit,
-  sndHurt,
-  sndBoom
-} from "@/lib/arcade-audio"
+import { sndShoot, sndHit, sndHurt, sndBoom } from "@/lib/arcade-audio"
 
 const BW = 480
 const BH = 360
@@ -77,6 +71,22 @@ export function ArcadeBattleCanvas({
   const { t } = useTranslation()
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
   const bossOffRef = useRef<HTMLCanvasElement | null>(null)
+
+  // 外部输入和回调的稳定引用，避免反复拆建 rAF 循环
+  const joyVecRef = useRef(joyVec)
+  joyVecRef.current = joyVec
+  const isDoneRef = useRef(isDone)
+  isDoneRef.current = isDone
+  const submittedAtRef = useRef(submittedAt)
+  submittedAtRef.current = submittedAt
+  const onScoreUpdateRef = useRef(onScoreUpdate)
+  onScoreUpdateRef.current = onScoreUpdate
+  const onProgressUpdateRef = useRef(onProgressUpdate)
+  onProgressUpdateRef.current = onProgressUpdate
+  const onBattleExplodeRef = useRef(onBattleExplode)
+  onBattleExplodeRef.current = onBattleExplode
+  const onScreenShakeRef = useRef(onScreenShake)
+  onScreenShakeRef.current = onScreenShake
 
   // 内部稳定引用的 mutable 状态
   const stateRef = useRef({
@@ -223,27 +233,29 @@ export function ArcadeBattleCanvas({
       const t = ts / 1000
 
       // 计算真实墙钟已消耗时间（毫秒）
-      const elapsedMs = submittedAt ? Date.now() - submittedAt : 0
+      const elapsedMs = submittedAtRef.current
+        ? Date.now() - submittedAtRef.current
+        : 0
 
       if (state.phase === "fight") {
         let p = calcEstimatedProgress(elapsedMs)
-        if (isDone) {
+        if (isDoneRef.current) {
           p = 100
         }
         state.progress = p
 
         const stage = getBattleStage(p)
-        onProgressUpdate(p, stage)
+        onProgressUpdateRef.current(p, stage)
 
         // 英雄移动（摇杆向量驱动）
-        const mx = joyVec.x
-        const my = joyVec.y
+        const mx = joyVecRef.current.x
+        const my = joyVecRef.current.y
         const mag = Math.sqrt(mx * mx + my * my)
         state.hero.moving = mag > 0.12
         if (state.hero.moving) {
           const cl = Math.min(1, mag)
-          state.hero.x += ((mx / (mag || 1)) * cl * 205) * dt
-          state.hero.y += ((my / (mag || 1)) * cl * 205) * dt
+          state.hero.x += (mx / (mag || 1)) * cl * 205 * dt
+          state.hero.y += (my / (mag || 1)) * cl * 205 * dt
           state.hero.x = Math.max(24, Math.min(298, state.hero.x))
           state.hero.y = Math.max(46, Math.min(322, state.hero.y))
         }
@@ -282,7 +294,7 @@ export function ArcadeBattleCanvas({
             state.hero.invuln = 0.9
             state.hurts++
             state.score = Math.max(0, state.score - 50)
-            onScoreUpdate(state.score, state.hits, state.hurts)
+            onScoreUpdateRef.current(state.score, state.hits, state.hurts)
             burst(
               state.hero.x,
               state.hero.y,
@@ -291,7 +303,7 @@ export function ArcadeBattleCanvas({
               130,
               4
             )
-            onScreenShake()
+            onScreenShakeRef.current()
             sndHurt()
           }
         }
@@ -301,15 +313,12 @@ export function ArcadeBattleCanvas({
           const b = state.bolts[bi]
           b.x += b.vx * dt
           b.y += b.vy * dt
-          if (
-            b.x > state.boss.x - 52 &&
-            Math.abs(b.y - state.boss.y) < 86
-          ) {
+          if (b.x > state.boss.x - 52 && Math.abs(b.y - state.boss.y) < 86) {
             state.bolts.splice(bi, 1)
             const dmg = 8 + Math.floor(Math.random() * 15)
             state.score += dmg
             state.hits++
-            onScoreUpdate(state.score, state.hits, state.hurts)
+            onScoreUpdateRef.current(state.score, state.hits, state.hurts)
             state.boss.shake = 9
             state.boss.flash = 0.09
             state.dmgNums.push({
@@ -318,14 +327,7 @@ export function ArcadeBattleCanvas({
               val: dmg,
               t: 0
             })
-            burst(
-              b.x,
-              b.y,
-              9,
-              ["#ffd94d", "#7dff8a", "#ffffff"],
-              150,
-              3.6
-            )
+            burst(b.x, b.y, 9, ["#ffd94d", "#7dff8a", "#ffffff"], 150, 3.6)
             sndHit()
             continue
           }
@@ -344,7 +346,7 @@ export function ArcadeBattleCanvas({
         drawFx(ctx)
 
         // 当生图已完成且进度已达 100%，触发 Boss 爆开动画
-        if (isDone && !state.hasExploded) {
+        if (isDoneRef.current && !state.hasExploded) {
           state.hasExploded = true
           state.phase = "explode"
           state.explodeStart = performance.now()
@@ -375,6 +377,7 @@ export function ArcadeBattleCanvas({
           state.orbs = []
           state.bolts = []
           sndBoom()
+          onScreenShakeRef.current()
         }
       } else {
         // 爆开阶段
@@ -384,7 +387,7 @@ export function ArcadeBattleCanvas({
         drawFx(ctx)
 
         if (performance.now() - state.explodeStart > 950) {
-          onBattleExplode()
+          onBattleExplodeRef.current()
         }
       }
     }
@@ -473,13 +476,7 @@ export function ArcadeBattleCanvas({
       off.width = res
       off.height = res
       offCtx.clearRect(0, 0, res, res)
-      drawMonsterShape(
-        offCtx,
-        res,
-        state.bossSkin,
-        false,
-        state.boss.flash > 0
-      )
+      drawMonsterShape(offCtx, res, state.bossSkin, false, state.boss.flash > 0)
       const reveal = Math.min(1, state.progress / 62)
       if (reveal < 1) {
         offCtx.globalAlpha = 1 - reveal
@@ -505,11 +502,8 @@ export function ArcadeBattleCanvas({
 
     const drawHero = (c: CanvasRenderingContext2D, t: number) => {
       const x = state.hero.x
-      const y =
-        state.hero.y + (state.hero.moving ? 0 : Math.sin(t * 2.4) * 2.2)
-      const breathe = state.hero.moving
-        ? 1
-        : 1 + Math.sin(t * 2.4) * 0.035
+      const y = state.hero.y + (state.hero.moving ? 0 : Math.sin(t * 2.4) * 2.2)
+      const breathe = state.hero.moving ? 1 : 1 + Math.sin(t * 2.4) * 0.035
       if (state.hero.invuln > 0 && Math.floor(t * 18) % 2 === 0) {
         c.globalAlpha = 0.35
       }
@@ -621,8 +615,8 @@ export function ArcadeBattleCanvas({
         c.fillStyle = "#ffd94d"
         c.strokeStyle = "#221d33"
         c.lineWidth = 3.5
-        c.strokeText("-" + d.val, d.x, d.y)
-        c.fillText("-" + d.val, d.x, d.y)
+        c.strokeText(`-${d.val}`, d.x, d.y)
+        c.fillText(`-${d.val}`, d.x, d.y)
       })
       c.globalAlpha = 1
     }
@@ -631,7 +625,21 @@ export function ArcadeBattleCanvas({
     return () => {
       cancelAnimationFrame(rafId)
     }
-  }, [joyVec, isDone, submittedAt, onScoreUpdate, onProgressUpdate, onBattleExplode, onScreenShake])
+  }, [])
+
+  // 当 isDone 激活但处于无 Canvas 环境（如 jsdom 单元测试）时，或超时兜底，触发完成回调
+  useEffect(() => {
+    if (!isDone) return
+    const ctx = canvasRef.current?.getContext("2d")
+    if (!ctx) {
+      onBattleExplodeRef.current()
+      return
+    }
+    const timer = setTimeout(() => {
+      onBattleExplodeRef.current()
+    }, 1500)
+    return () => clearTimeout(timer)
+  }, [isDone])
 
   return (
     <div className="battle-wrap">
