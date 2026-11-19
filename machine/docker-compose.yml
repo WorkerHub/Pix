@@ -1,0 +1,23 @@
+services:
+  pix-server:
+    image: ghcr.io/workerhub/pix-server:latest
+    container_name: pix-server
+    restart: unless-stopped
+    env_file:
+      - .env
+    ports:
+      # 只暴露代理端口 8190（ComfyUI 8188 仅限容器内 127.0.0.1 访问，绝不暴露）
+      - "8190:8190"
+    volumes:
+      # Instabox 部署规范目录与数据 volume（或根据宿主机路径调整）
+      - /data/docker/pix-server/models:/app/ComfyUI/models/checkpoints
+      - /data/docker/pix-server/output:/app/ComfyUI/output
+      - /data/docker/pix-server/user:/app/ComfyUI/user
+    environment:
+      - PIX_SERVER_SECRET=${PIX_SERVER_SECRET}
+      - PROXY_HOST=${PROXY_HOST:-0.0.0.0}
+      - PROXY_PORT=${PROXY_PORT:-8190}
+      - MODEL_NAME=${MODEL_NAME:-Realistic_Vision_V6.0_B1_VAE.safetensors}
+      - MODEL_DOWNLOAD_URL=${MODEL_DOWNLOAD_URL:-https://huggingface.co/everynightdawns/Realistic_Vision_V6.0_B1_VAE/resolve/main/Realistic_Vision_V6.0_B1_VAE.safetensors}
+      - MODEL_SHA256=${MODEL_SHA256:-fe7578cb5ee0be63aa15baa894ab5d1751ff9b5b25ef611d5fafb2186d930c30}
+      - SKIP_MODEL_DOWNLOAD=${SKIP_MODEL_DOWNLOAD:-0}
