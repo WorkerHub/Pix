@@ -4,7 +4,7 @@ import os
 import httpx
 from machine import config
 
-logger = logging.getLogger("pix-server.model")
+logger = logging.getLogger("pix-service.model")
 
 
 class ModelManager:

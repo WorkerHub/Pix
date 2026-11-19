@@ -45,8 +45,8 @@ jobs:
         env:
           DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
         run: |
-          GHCR_REPO="ghcr.io/workerhub/pix-server"
-          DH_REPO="docker.io/workerhub/pix-server"
+          GHCR_REPO="ghcr.io/workerhub/pix-service"
+          DH_REPO="docker.io/workerhub/pix-service"
 
           TAGS="${GHCR_REPO}:latest"
           if [ -n "$DOCKERHUB_USERNAME" ]; then
@@ -63,6 +63,49 @@ jobs:
           fi
 
           echo "tags=$TAGS" >> "$GITHUB_OUTPUT"
+
+      - name: Build image for smoke test
+        uses: docker/build-push-action@v6
+        with:
+          context: machine
+          file: machine/Dockerfile
+          platforms: linux/amd64
+          load: true
+          tags: pix-service:smoke
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Smoke test container (ComfyUI ready gate)
+        run: |
+          echo "Starting container for smoke test..."
+          docker run -d --name smoke-test \
+            -e PIX_SERVER_SECRET=smoke-secret \
+            -e SKIP_MODEL_DOWNLOAD=1 \
+            -p 8190:8190 pix-service:smoke
+
+          echo "Waiting for proxy and ComfyUI to become ready (timeout 180s)..."
+          PASSED=0
+          for i in $(seq 1 90); do
+            sleep 2
+            RES=$(curl -s -H "X-Pix-Secret: smoke-secret" http://127.0.0.1:8190/health || true)
+            echo "Attempt $i: $RES"
+            if echo "$RES" | grep -q '"ok":true' && echo "$RES" | grep -q '"comfyReady":true'; then
+              echo "Smoke test passed: ComfyUI is up and comfyReady is true!"
+              PASSED=1
+              break
+            fi
+          done
+
+          if [ "$PASSED" -ne 1 ]; then
+            echo "Smoke test failed! ComfyUI did not reach ready state."
+            echo "=== Container logs ==="
+            docker logs smoke-test
+            docker rm -f smoke-test || true
+            exit 1
+          fi
+
+          docker rm -f smoke-test
+          echo "Smoke test container cleaned up successfully."
 
       - name: Build and push
         uses: docker/build-push-action@v6

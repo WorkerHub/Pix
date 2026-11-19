@@ -1,7 +1,7 @@
 services:
-  pix-server:
-    image: ghcr.io/workerhub/pix-server:latest
-    container_name: pix-server
+  pix-service:
+    image: ghcr.io/workerhub/pix-service:latest
+    container_name: pix-service
     restart: unless-stopped
     env_file:
       - .env
@@ -10,9 +10,9 @@ services:
       - "8190:8190"
     volumes:
       # Instabox 部署规范目录与数据 volume（或根据宿主机路径调整）
-      - /data/docker/pix-server/models:/app/ComfyUI/models/checkpoints
-      - /data/docker/pix-server/output:/app/ComfyUI/output
-      - /data/docker/pix-server/user:/app/ComfyUI/user
+      - /data/docker/pix-service/models:/app/ComfyUI/models/checkpoints
+      - /data/docker/pix-service/output:/app/ComfyUI/output
+      - /data/docker/pix-service/user:/app/ComfyUI/user
     environment:
       - PIX_SERVER_SECRET=${PIX_SERVER_SECRET}
       - PROXY_HOST=${PROXY_HOST:-0.0.0.0}

@@ -28,6 +28,9 @@ RUN pip install --no-cache-dir \
 # Install ComfyUI dependencies
 RUN pip install --no-cache-dir -r /app/ComfyUI/requirements.txt
 
+# ComfyUI v0.9.2 app/frontend_management.py imports requests which upstream requirements omits
+RUN pip install --no-cache-dir requests
+
 # Copy proxy requirements and install
 COPY requirements.txt /app/machine/requirements.txt
 RUN pip install --no-cache-dir -r /app/machine/requirements.txt
