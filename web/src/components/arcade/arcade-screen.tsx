@@ -112,7 +112,7 @@ export function ArcadeScreen({
     sndCoin()
     const link = document.createElement("a")
     link.href = genImageUrl(jobId)
-    link.download = `pix-boss-${jobId}.png`
+    link.download = `boss-${jobId}.png`
     link.target = "_blank"
     link.rel = "noreferrer"
     document.body.appendChild(link)

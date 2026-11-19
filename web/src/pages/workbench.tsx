@@ -26,7 +26,7 @@ import {
 import "@/components/arcade/arcade.css"
 
 /**
- * Pix 游戏厅生图控制台（Boss 战街机版）
+ * 游戏厅生图控制台（Boss 战街机版）
  */
 export function WorkbenchPage() {
   const { t } = useTranslation()
@@ -536,7 +536,7 @@ export function WorkbenchPage() {
             <i />
           </div>
           <h1>
-            PIX <span className="pix">{t("arcade.marquee.title")}</span>
+            PIX <span className="glow">{t("arcade.marquee.title")}</span>
           </h1>
           <div className="sub">
             <b>{t("arcade.marquee.sub1")}</b> · {t("arcade.marquee.sub2")}

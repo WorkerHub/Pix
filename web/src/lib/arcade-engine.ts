@@ -1,5 +1,5 @@
 /**
- * Pix 街机 Boss 战核心算法与游戏计算
+ * 街机 Boss 战核心算法与游戏计算
  * 参数、曲线与绘图逻辑严格对齐 design/arcade-prototype.html
  */
 

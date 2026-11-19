@@ -3,7 +3,7 @@
  * 参数与原型 design/arcade-prototype.html 严格一致
  */
 
-const SOUND_STORAGE_KEY = "pix-arcade-sound"
+const SOUND_STORAGE_KEY = "arcade-sound"
 
 let soundEnabled = true
 try {
