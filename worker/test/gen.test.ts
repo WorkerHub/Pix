@@ -15,9 +15,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { MACHINE_AUTH_HEADER } from "../src/config/project"
 import { findGenerationByJobId } from "../src/db/queries/generations"
 import {
+  ALLOWED_MODELS,
+  DEFAULT_MODEL,
   buildMachineUrl,
   extractMachineToken,
-  machineHeaders
+  machineHeaders,
+  resolveDefaultModel
 } from "../src/routes/gen"
 import {
   activePrefix,
@@ -127,6 +130,37 @@ describe("machineHeaders", () => {
 
   it("既无 secret 也无 _token 时返回空请求头对象", () => {
     expect(machineHeaders("http://127.0.0.1:8190")).toEqual({})
+  })
+})
+
+describe("resolveDefaultModel", () => {
+  it("无 env 或 env 为 null/undefined 时回退到 DEFAULT_MODEL (realistic-lcm)", () => {
+    expect(resolveDefaultModel()).toBe(DEFAULT_MODEL)
+    expect(resolveDefaultModel(undefined)).toBe(DEFAULT_MODEL)
+    expect(resolveDefaultModel(null)).toBe(DEFAULT_MODEL)
+    expect(DEFAULT_MODEL).toBe("realistic-lcm")
+  })
+
+  it("env.DEFAULT_MODEL 未配置或为空字符串时回退到 DEFAULT_MODEL (realistic-lcm)", () => {
+    expect(resolveDefaultModel({})).toBe(DEFAULT_MODEL)
+    expect(resolveDefaultModel({ DEFAULT_MODEL: "" })).toBe(DEFAULT_MODEL)
+    expect(resolveDefaultModel({ DEFAULT_MODEL: "   " })).toBe(DEFAULT_MODEL)
+  })
+
+  it("env.DEFAULT_MODEL 配置为合法模型时正确解析并自动 trim", () => {
+    for (const model of ALLOWED_MODELS) {
+      expect(resolveDefaultModel({ DEFAULT_MODEL: model })).toBe(model)
+    }
+    expect(resolveDefaultModel({ DEFAULT_MODEL: "  realistic  " })).toBe(
+      "realistic"
+    )
+  })
+
+  it("env.DEFAULT_MODEL 配置为非法值时安全回退到 DEFAULT_MODEL (realistic-lcm)", () => {
+    expect(resolveDefaultModel({ DEFAULT_MODEL: "unknown-model" })).toBe(
+      DEFAULT_MODEL
+    )
+    expect(resolveDefaultModel({ DEFAULT_MODEL: "sdxl" })).toBe(DEFAULT_MODEL)
   })
 })
 
@@ -496,6 +530,122 @@ describe("POST /api/gen 正常转发与形状映射（一律 HTTP 200）", () =>
         prompt: "a cat",
         size: "portrait",
         model: "dreamshaper"
+      })
+    )
+  })
+
+  it("当 env.DEFAULT_MODEL 配置为 realistic 时，缺省 model 的请求回退到 realistic", async () => {
+    const customCtx = await initializedContext({
+      PIX_SERVER_URL: MOCK_SERVER_URL,
+      PIX_SERVER_SECRET: MOCK_SERVER_SECRET,
+      DEFAULT_MODEL: "realistic"
+    })
+    const session = await seedSession(customCtx.db, activePrefix(customCtx.env))
+
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(JSON.stringify({ jobId: "job-default-realistic" }), {
+        status: 202,
+        headers: { "Content-Type": "application/json" }
+      })
+    )
+
+    const res = await request(customCtx.env, "/api/gen", {
+      method: "POST",
+      headers: { Cookie: session.cookie, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        prompt: "a sunset over mountain",
+        size: "square"
+      })
+    })
+
+    expect(res.status).toBe(200)
+    const [, callInit] = fetchMock.mock.calls[0]
+    expect(callInit?.body).toBe(
+      JSON.stringify({
+        prompt: "a sunset over mountain",
+        size: "square",
+        model: "realistic"
+      })
+    )
+
+    const r2 = customCtx.env.IMAGES as unknown as MockR2Bucket
+    const pendingObj = await r2.get("_pending/job-default-realistic.json")
+    expect(pendingObj).not.toBeNull()
+    const meta = await pendingObj?.json()
+    expect(meta).toMatchObject({
+      userId: session.userId,
+      size: "square",
+      model: "realistic"
+    })
+  })
+
+  it("当 env.DEFAULT_MODEL 配置为 realistic 时，显式传 model 优先于环境变量默认值", async () => {
+    const customCtx = await initializedContext({
+      PIX_SERVER_URL: MOCK_SERVER_URL,
+      PIX_SERVER_SECRET: MOCK_SERVER_SECRET,
+      DEFAULT_MODEL: "realistic"
+    })
+    const session = await seedSession(customCtx.db, activePrefix(customCtx.env))
+
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(JSON.stringify({ jobId: "job-override-model" }), {
+        status: 202,
+        headers: { "Content-Type": "application/json" }
+      })
+    )
+
+    const res = await request(customCtx.env, "/api/gen", {
+      method: "POST",
+      headers: { Cookie: session.cookie, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        prompt: "anime girl",
+        size: "portrait",
+        model: "counterfeit"
+      })
+    })
+
+    expect(res.status).toBe(200)
+    const [, callInit] = fetchMock.mock.calls[0]
+    expect(callInit?.body).toBe(
+      JSON.stringify({
+        prompt: "anime girl",
+        size: "portrait",
+        model: "counterfeit"
+      })
+    )
+  })
+
+  it("当 env.DEFAULT_MODEL 配置为非法值时，缺省 model 安全回退到 realistic-lcm", async () => {
+    const customCtx = await initializedContext({
+      PIX_SERVER_URL: MOCK_SERVER_URL,
+      PIX_SERVER_SECRET: MOCK_SERVER_SECRET,
+      DEFAULT_MODEL: "invalid-custom-model"
+    })
+    const session = await seedSession(customCtx.db, activePrefix(customCtx.env))
+
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(JSON.stringify({ jobId: "job-fallback-model" }), {
+        status: 202,
+        headers: { "Content-Type": "application/json" }
+      })
+    )
+
+    const res = await request(customCtx.env, "/api/gen", {
+      method: "POST",
+      headers: { Cookie: session.cookie, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        prompt: "a flower",
+        size: "square"
+      })
+    })
+
+    expect(res.status).toBe(200)
+    const [, callInit] = fetchMock.mock.calls[0]
+    expect(callInit?.body).toBe(
+      JSON.stringify({
+        prompt: "a flower",
+        size: "square",
+        model: "realistic-lcm"
       })
     )
   })
@@ -989,6 +1139,55 @@ describe("GET /api/gen/image/:jobId 取图流式透传与无公共缓存", () =>
       "job-no-pending"
     )
     expect(record).toBeNull()
+  })
+
+  it("当 pending 元数据中 model 缺失且 env.DEFAULT_MODEL 配为 realistic 时，持久化记录回退到 realistic", async () => {
+    const customCtx = await initializedContext({
+      PIX_SERVER_URL: MOCK_SERVER_URL,
+      PIX_SERVER_SECRET: MOCK_SERVER_SECRET,
+      DEFAULT_MODEL: "realistic"
+    })
+    const prefix = activePrefix(customCtx.env)
+    const session = await seedSession(customCtx.db, prefix, {
+      email: "model-fallback-user@example.test"
+    })
+
+    const r2 = customCtx.env.IMAGES as unknown as MockR2Bucket
+    await r2.put(
+      "_pending/job-persist-env-fallback.json",
+      JSON.stringify({
+        userId: session.userId,
+        promptOriginal: "赛博朋克城市",
+        promptEffective: "cyberpunk city",
+        size: "square",
+        createdAt: "2026-11-19T10:00:00.000Z"
+      })
+    )
+
+    const fakeImageData = new Uint8Array([137, 80, 78, 71, 10, 20])
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(fakeImageData, {
+        status: 200,
+        headers: { "Content-Type": "image/png" }
+      })
+    )
+
+    const res = await request(
+      customCtx.env,
+      "/api/gen/image/job-persist-env-fallback",
+      {
+        headers: { Cookie: session.cookie }
+      }
+    )
+    expect(res.status).toBe(200)
+
+    const record = await findGenerationByJobId(
+      customCtx.env.DB,
+      prefix,
+      "job-persist-env-fallback"
+    )
+    expect(record).not.toBeNull()
+    expect(record?.model).toBe("realistic")
   })
 
   it("当 R2 或 D1 持久化发生异常时，不阻塞图片正常流式返回（容错保障）", async () => {

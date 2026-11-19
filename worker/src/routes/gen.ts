@@ -50,6 +50,23 @@ export function isValidModel(model: unknown): model is GenerationModel {
   )
 }
 
+/**
+ * 解析生图默认模型：
+ * 优先读取运行期环境变量（env.DEFAULT_MODEL，经 trim 去除多余空白）；
+ * 若配置值存在且在 ALLOWED_MODELS 允许名单中，则采用该配置值；
+ * 缺失、空值或非法值时，安全回退到代码常量 DEFAULT_MODEL ("realistic-lcm")。
+ */
+export function resolveDefaultModel(
+  env?: { DEFAULT_MODEL?: string } | null
+): GenerationModel {
+  const raw = env?.DEFAULT_MODEL
+  const configured = typeof raw === "string" ? raw.trim() : ""
+  if (configured && isValidModel(configured)) {
+    return configured
+  }
+  return DEFAULT_MODEL
+}
+
 export interface GenerateRequestBody {
   prompt: string
   size: "portrait" | "square"
@@ -207,8 +224,9 @@ genRoutes.post("/", async (c) => {
     )
   }
 
+  const defaultModel = resolveDefaultModel(c.env)
   const selectedModel: GenerationModel =
-    body.model === undefined || body.model === null ? DEFAULT_MODEL : body.model
+    body.model === undefined || body.model === null ? defaultModel : body.model
 
   const { translated, effectivePrompt } = await resolvePrompt(
     c.env.AI,
@@ -393,9 +411,10 @@ genRoutes.get("/image/:jobId", async (c) => {
             meta.size === "portrait" || meta.size === "square"
               ? meta.size
               : "square"
+          const defaultModel = resolveDefaultModel(c.env)
           const model: GenerationModel = isValidModel(meta.model)
             ? meta.model
-            : DEFAULT_MODEL
+            : defaultModel
           const createdAt =
             typeof meta.createdAt === "string"
               ? meta.createdAt

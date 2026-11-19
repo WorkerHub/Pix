@@ -32,4 +32,9 @@ SIGNING_SECRET=SIGNING_SECRET_PLACEHOLDER
 # PIX_SERVER_SECRET（可选，Worker secret）：机器侧代理共享密钥（与机器 .env 同值）。
 # 请求机器时在请求头带 X-Pix-Secret。
 # PIX_SERVER_SECRET=
+#
+# DEFAULT_MODEL（可选，非密钥，默认 realistic-lcm）：默认生图模型 ID。
+# 允许值：realistic-lcm / realistic / majicmix / dreamshaper / counterfeit。
+# 不配置时代码回退到 realistic-lcm；部署时由 wrangler [vars] 或环境变量覆盖为 realistic。
+# DEFAULT_MODEL=realistic
 
