@@ -43,11 +43,18 @@ const REQUIRED = [
 const SECRET_KEYS = ["SETUP_SECRET", "SIGNING_SECRET"]
 
 /**
- * 可选项 `WAKER_SIGNING_KEY`：waker 回调的签名钥（规格 §5.5A 的三态开关）。
- * 未配置/占位值 = 未配置，不写进 secrets.json；保留值 `false` 是合法配置值
- * （= 显式关闭），必须原样上传，运行时要看到这个字面值才知道该停。
+ * 可选项：
+ * - WAKER_SIGNING_KEY：waker 回调的签名钥（规格 §5.5A 的三态开关）。
+ *   未配置/占位值 = 未配置，不写进 secrets.json；保留值 `false` 是合法配置值
+ *   （= 显式关闭），必须原样上传，运行时要看到这个字面值才知道该停。
+ * - PIX_SERVER_URL / PIX_SERVER_SECRET：绘图机器侧代理服务的地址与鉴权 Secret。
+ *   可选 Worker secret：未配置/占位值不写进 secrets.json；有值才写，不设成必填。
  */
-const OPTIONAL_SECRET_KEYS = ["WAKER_SIGNING_KEY"]
+const OPTIONAL_SECRET_KEYS = [
+  "WAKER_SIGNING_KEY",
+  "PIX_SERVER_URL",
+  "PIX_SERVER_SECRET"
+]
 
 /** 与运行时/方案同口径的"显式关闭"保留值（大小写敏感，只认小写）。 */
 const WAKER_SIGNING_KEY_DISABLED = "false"
@@ -128,7 +135,9 @@ for (const name of OPTIONAL_SECRET_KEYS) {
   secrets[name] = value
   optional.push(name)
   console.log(
-    value === WAKER_SIGNING_KEY_DISABLED ? `${name}: 已关闭` : `${name}: 已配置`
+    name === "WAKER_SIGNING_KEY" && value === WAKER_SIGNING_KEY_DISABLED
+      ? `${name}: 已关闭`
+      : `${name}: 已配置`
   )
 }
 
