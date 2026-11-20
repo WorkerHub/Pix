@@ -50,9 +50,6 @@ export function WorkbenchPage() {
   jobIdRef.current = jobId
   const submittedAtRef = useRef(submittedAt)
   submittedAtRef.current = submittedAt
-  const handleSubmitRef = useRef<(e?: React.FormEvent) => Promise<void>>(() =>
-    Promise.resolve()
-  )
 
   /** 加载历史列表 */
   const loadHistory = useCallback(
@@ -99,11 +96,20 @@ export function WorkbenchPage() {
   /** 删除单条历史 */
   const handleDeleteHistory = useCallback(
     async (id: number): Promise<boolean> => {
-      await genApi.deleteHistory(id)
-      setHistoryItems((prev) => prev.filter((it) => it.id !== id))
-      return true
+      try {
+        await genApi.deleteHistory(id)
+        setHistoryItems((prev) => prev.filter((it) => it.id !== id))
+        return true
+      } catch (err) {
+        // 删除失败（如已在其他标签页删除返回 404）时，刷新列表对齐服务端状态
+        if (err instanceof ApiError && err.status === 404) {
+          setHistoryItems((prev) => prev.filter((it) => it.id !== id))
+        }
+        void refreshHistory()
+        throw err
+      }
     },
-    []
+    [refreshHistory]
   )
 
   /** 加载更多历史 */
@@ -331,7 +337,6 @@ export function WorkbenchPage() {
       setErrorMessage(describeApiError(t, err))
     }
   }
-  handleSubmitRef.current = handleSubmit
 
   /** 离线态或启动态「重新检查」按钮点击 */
   const handleRecheckHealth = async () => {
@@ -407,7 +412,7 @@ export function WorkbenchPage() {
     >
       <div className="flex h-full min-h-0 w-full flex-col gap-3 lg:grid lg:grid-cols-[minmax(0,1fr)_340px] xl:grid-cols-[minmax(0,1fr)_380px]">
         {/* 左列：大图画布 + 底部历史条 */}
-        <div className="flex h-full min-h-0 min-w-0 flex-1 flex-col gap-3">
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-3 lg:h-full">
           <Canvas
             phase={phase}
             jobId={jobId ?? ""}
@@ -438,12 +443,11 @@ export function WorkbenchPage() {
           onSizeChange={setSize}
           model={model}
           onModelChange={setModel}
-          phase={phase}
           submitting={phase === "submitting"}
           generating={phase === "generating"}
           offline={phase === "offline"}
           onSubmit={() => void handleSubmit()}
-          className="h-full"
+          className="shrink-0 lg:h-full"
         />
       </div>
     </div>

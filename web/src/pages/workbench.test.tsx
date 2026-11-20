@@ -20,7 +20,7 @@ vi.mock("@/lib/api", async (importOriginal) => {
   }
 })
 
-const { genApi } = await import("@/lib/api")
+const { genApi, ApiError } = await import("@/lib/api")
 
 function renderPage() {
   return render(<WorkbenchPage />)
@@ -400,6 +400,48 @@ describe("卡通风格生图页（并入 #14 历史区）", () => {
       expect(genApi.deleteHistory).toHaveBeenCalledWith(101)
       expect(screen.queryByText("#101")).not.toBeInTheDocument()
       // #102 依然保留且编号不变
+      expect(screen.getByText("#102")).toBeInTheDocument()
+    })
+  })
+
+  it("删除历史项失败（如 404）时触发 refreshHistory 对齐服务端状态", async () => {
+    vi.mocked(genApi.history).mockResolvedValueOnce({
+      items: mockHistoryItems,
+      total: 2,
+      page: 1,
+      pageSize: 12,
+      totalPages: 1
+    })
+
+    renderPage()
+
+    expect(await screen.findByText("#101")).toBeInTheDocument()
+
+    // 模拟服务端 404（已在其他端被删除）
+    vi.mocked(genApi.deleteHistory).mockRejectedValueOnce(
+      new ApiError({ status: 404, message: "Not found" })
+    )
+    // 触发的 refreshHistory 返回只剩 #102
+    vi.mocked(genApi.history).mockResolvedValueOnce({
+      items: [mockHistoryItems[1]],
+      total: 1,
+      page: 1,
+      pageSize: 12,
+      totalPages: 1
+    })
+
+    const deleteButtons = screen.getAllByRole("button", { name: "删除" })
+    fireEvent.click(deleteButtons[0])
+
+    const confirmDeleteBtn = screen
+      .getAllByRole("button", { name: "删除" })
+      .pop()!
+    fireEvent.click(confirmDeleteBtn)
+
+    await waitFor(() => {
+      expect(genApi.deleteHistory).toHaveBeenCalledWith(101)
+      expect(genApi.history).toHaveBeenCalledTimes(2)
+      expect(screen.queryByText("#101")).not.toBeInTheDocument()
       expect(screen.getByText("#102")).toBeInTheDocument()
     })
   })

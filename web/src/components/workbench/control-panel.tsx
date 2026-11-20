@@ -6,7 +6,6 @@ import {
   MODEL_OPTIONS,
   modelLabelKey
 } from "@/lib/api-types"
-import type { GenPhase } from "@/lib/gen"
 import { cn } from "cn"
 
 interface ControlPanelProps {
@@ -16,7 +15,6 @@ interface ControlPanelProps {
   onSizeChange: (val: GenerateSize) => void
   model: GenerationModel
   onModelChange: (val: GenerationModel) => void
-  phase: GenPhase
   submitting: boolean
   generating: boolean
   offline: boolean
