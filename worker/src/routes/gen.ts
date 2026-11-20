@@ -15,7 +15,11 @@
  * 每次对机器的调用直接响应浏览器的一次请求。
  */
 import { Hono } from "hono"
-import { MACHINE_AUTH_HEADER, PROJECT_SLUG } from "../config/project"
+import {
+  MACHINE_AUTH_HEADER,
+  MACHINE_ELAPSED_HEADER,
+  PROJECT_SLUG
+} from "../config/project"
 import {
   deleteGenerationByIdAndUser,
   findGenerationByIdAndUser,
@@ -115,6 +119,23 @@ export function isValidModel(model: unknown): model is GenerationModel {
     typeof model === "string" &&
     (ALLOWED_MODELS as readonly string[]).includes(model)
   )
+}
+
+/**
+ * 解析响应头中的任务耗时为整数秒。
+ * 头缺失、空串、非合法数字、负数统一返回 null；合法非负数取整（四舍五入）为整数秒。
+ */
+export function parseElapsedSeconds(
+  raw: string | null | undefined
+): number | null {
+  if (raw === null || raw === undefined) return null
+  const trimmed = raw.trim()
+  if (trimmed === "") return null
+  const parsed = Number(trimmed)
+  if (!Number.isFinite(parsed) || parsed < 0) {
+    return null
+  }
+  return Math.round(parsed)
 }
 
 /**
@@ -446,6 +467,8 @@ genRoutes.get("/image/:jobId", async (c) => {
 
     if (res.status === 200) {
       const imageBytes = await res.arrayBuffer()
+      const rawElapsed = res.headers.get(MACHINE_ELAPSED_HEADER)
+      const durationSeconds = parseElapsedSeconds(rawElapsed)
 
       const persistPromise = (async () => {
         try {
@@ -508,6 +531,7 @@ genRoutes.get("/image/:jobId", async (c) => {
             promptEffective,
             size,
             r2Key,
+            durationSeconds,
             createdAt
           })
 
@@ -581,6 +605,7 @@ genRoutes.get("/history", async (c) => {
       prompt_original: r.prompt_original,
       prompt_effective: r.prompt_effective,
       size: r.size,
+      duration_seconds: r.duration_seconds ?? null,
       created_at: r.created_at,
       imageUrl: `/api/gen/history/${r.id}/image`
     })),
