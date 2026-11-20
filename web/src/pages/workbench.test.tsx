@@ -1,9 +1,17 @@
-import { act, fireEvent, render, screen, waitFor } from "@testing-library/react"
+import {
+  act,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within
+} from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { i18n } from "@/i18n"
 import type { GenerationHistoryItem } from "@/lib/api-types"
 import {
+  formatHistoryMeta,
   GEN_JOB_STORAGE_KEY,
   HISTORY_POLL_DELAYS,
   writeStoredJob
@@ -39,7 +47,8 @@ const mockHistoryItems: GenerationHistoryItem[] = [
     prompt_effective: "surfing dog",
     size: "portrait",
     created_at: "2026-11-20T10:00:00Z",
-    imageUrl: "/api/gen/history/101/image"
+    imageUrl: "/api/gen/history/101/image",
+    duration_seconds: 65
   },
   {
     id: 102,
@@ -49,7 +58,8 @@ const mockHistoryItems: GenerationHistoryItem[] = [
     prompt_effective: "cyberpunk city night",
     size: "square",
     created_at: "2026-11-20T10:05:00Z",
-    imageUrl: "/api/gen/history/102/image"
+    imageUrl: "/api/gen/history/102/image",
+    duration_seconds: null
   }
 ]
 
@@ -374,15 +384,39 @@ describe("卡通风格生图页（并入 #14 历史区）", () => {
       "/api/gen/history/101/image?download=1"
     )
 
-    // 3. 点击缩略图打开原图灯箱 Dialog
-    const viewThumbnails = screen.getAllByTitle("查看原图")
+    // 3. 悬浮展示 Tooltip 元信息浮层，点击缩略图打开原图灯箱 Dialog 展示元信息与提示词原文
+    const user = userEvent.setup()
+    const viewThumbnails = screen.getAllByRole("button", { name: "查看原图" })
+    const meta101 = formatHistoryMeta(mockHistoryItems[0], i18n.t)
+
+    await user.hover(viewThumbnails[0])
+    expect(await screen.findByRole("tooltip")).toHaveTextContent(meta101)
+    await user.unhover(viewThumbnails[0])
+
     fireEvent.click(viewThumbnails[0])
 
-    await waitFor(() => {
-      expect(screen.getByRole("dialog")).toBeInTheDocument()
-    })
+    const dialog = await screen.findByRole("dialog")
+    expect(within(dialog).getByText(meta101)).toBeInTheDocument()
+    expect(within(dialog).getByText("小狗在沙滩冲浪")).toBeInTheDocument()
+
     // 灯箱内关闭
-    fireEvent.click(screen.getByRole("button", { name: "关闭" }))
+    fireEvent.click(within(dialog).getByRole("button", { name: "关闭" }))
+    await waitFor(() => {
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument()
+    })
+
+    // 测试老记录（#102，duration_seconds 为 null）打开灯箱展示元信息（省略耗时段）与提示词
+    fireEvent.click(viewThumbnails[1])
+    const dialog102 = await screen.findByRole("dialog")
+    const meta102 = formatHistoryMeta(mockHistoryItems[1], i18n.t)
+    expect(within(dialog102).getByText(meta102)).toBeInTheDocument()
+    expect(meta102).not.toContain("秒")
+    expect(meta102).not.toContain("分")
+    expect(within(dialog102).getByText("未来城市夜景")).toBeInTheDocument()
+    fireEvent.click(within(dialog102).getByRole("button", { name: "关闭" }))
+    await waitFor(() => {
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument()
+    })
 
     // 4. 删除历史项确认流程
     const deleteButtons = screen.getAllByRole("button", { name: "删除" })
@@ -818,5 +852,48 @@ describe("卡通风格生图页（并入 #14 历史区）", () => {
     expect(screen.getByRole("radio", { name: "Square" })).toBeInTheDocument()
     expect(screen.getByRole("button", { name: "Generate" })).toBeInTheDocument()
     expect(screen.getByText("History")).toBeInTheDocument()
+  })
+
+  it("历史条目元信息：支持未知模型回退原始 id 与秒级耗时展示", async () => {
+    const customItems: GenerationHistoryItem[] = [
+      {
+        id: 201,
+        job_id: "job-201",
+        model: "special-custom-model",
+        prompt_original: "未知模型的特殊生成图",
+        prompt_effective: "special prompt",
+        size: "portrait",
+        created_at: "2026-11-20T10:10:00Z",
+        imageUrl: "/api/gen/history/201/image",
+        duration_seconds: 45
+      }
+    ]
+
+    vi.mocked(genApi.history).mockResolvedValueOnce({
+      items: customItems,
+      total: 1,
+      page: 1,
+      pageSize: 12,
+      totalPages: 1
+    })
+
+    renderPage()
+
+    const viewThumbnails = await screen.findAllByRole("button", {
+      name: "查看原图"
+    })
+    const meta = formatHistoryMeta(customItems[0], i18n.t)
+    expect(meta).toContain("special-custom-model")
+    expect(meta).toContain("45秒")
+
+    const user = userEvent.setup()
+    await user.hover(viewThumbnails[0])
+    expect(await screen.findByRole("tooltip")).toHaveTextContent(meta)
+    await user.unhover(viewThumbnails[0])
+
+    fireEvent.click(viewThumbnails[0])
+    const dialog = await screen.findByRole("dialog")
+    expect(within(dialog).getByText(meta)).toBeInTheDocument()
+    expect(within(dialog).getByText("未知模型的特殊生成图")).toBeInTheDocument()
   })
 })

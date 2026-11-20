@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it } from "vitest"
+import { i18n } from "@/i18n"
 import type { GenerationHistoryItem } from "@/lib/api-types"
 import {
   appendHistoryItems,
@@ -6,6 +7,10 @@ import {
   clearStoredJob,
   elapsedSeconds,
   estimatedGenDurationSec,
+  formatHistoryDate,
+  formatHistoryDuration,
+  formatHistoryMeta,
+  formatModelDisplayName,
   GEN_JOB_STORAGE_KEY,
   GEN_POLL_INTERVAL_MS,
   GEN_PROGRESS_CAP,
@@ -251,6 +256,124 @@ describe("gen helpers", () => {
           "job-3"
         ])
         expect(appended[0].id).toBe(1) // 保留 existing 中的版本
+      })
+    })
+  })
+
+  describe("历史条目元信息格式化", () => {
+    beforeEach(async () => {
+      await i18n.changeLanguage("zh")
+    })
+
+    describe("formatHistoryDate", () => {
+      it("按本地时区格式化为 MM-DD HH:mm", () => {
+        // 创建固定本地时区的时间
+        const date = new Date(2026, 10, 20, 18, 5) // 2026-11-20 18:05
+        expect(formatHistoryDate(date)).toBe("11-20 18:05")
+      })
+
+      it("非法日期返回空串", () => {
+        expect(formatHistoryDate("invalid-date")).toBe("")
+      })
+    })
+
+    describe("formatModelDisplayName", () => {
+      it("已知模型查 i18n 映射", () => {
+        expect(formatModelDisplayName("realistic-lcm", i18n.t)).toBe(
+          "写实·极速"
+        )
+        expect(formatModelDisplayName("counterfeit", i18n.t)).toBe("动漫")
+      })
+
+      it("未知模型回退原始 id", () => {
+        expect(formatModelDisplayName("custom-unknown-model", i18n.t)).toBe(
+          "custom-unknown-model"
+        )
+      })
+
+      it("空值回退空串", () => {
+        expect(formatModelDisplayName(null, i18n.t)).toBe("")
+        expect(formatModelDisplayName(undefined, i18n.t)).toBe("")
+      })
+    })
+
+    describe("formatHistoryDuration", () => {
+      it("空值/负值/非法数值返回 null", () => {
+        expect(formatHistoryDuration(null, i18n.t)).toBeNull()
+        expect(formatHistoryDuration(undefined, i18n.t)).toBeNull()
+        expect(formatHistoryDuration(-1, i18n.t)).toBeNull()
+        expect(formatHistoryDuration(NaN, i18n.t)).toBeNull()
+        expect(formatHistoryDuration(Infinity, i18n.t)).toBeNull()
+        expect(formatHistoryDuration(-Infinity, i18n.t)).toBeNull()
+      })
+
+      it("不足 1 分钟补零显示 XX秒", () => {
+        expect(formatHistoryDuration(0, i18n.t)).toBe("00秒")
+        expect(formatHistoryDuration(5, i18n.t)).toBe("05秒")
+        expect(formatHistoryDuration(45, i18n.t)).toBe("45秒")
+        expect(formatHistoryDuration(59.8, i18n.t)).toBe("59秒")
+      })
+
+      it("满 1 分钟显示 X分XX秒", () => {
+        expect(formatHistoryDuration(60, i18n.t)).toBe("1分00秒")
+        expect(formatHistoryDuration(65, i18n.t)).toBe("1分05秒")
+        expect(formatHistoryDuration(125, i18n.t)).toBe("2分05秒")
+        expect(formatHistoryDuration(3661, i18n.t)).toBe("61分01秒")
+      })
+
+      it("英文语言环境下格式化", async () => {
+        await i18n.changeLanguage("en")
+        expect(formatHistoryDuration(5, i18n.t)).toBe("05s")
+        expect(formatHistoryDuration(65, i18n.t)).toBe("1m 05s")
+      })
+    })
+
+    describe("formatHistoryMeta", () => {
+      it("完整字段包含耗时", () => {
+        const localDate = new Date(2026, 10, 20, 18, 5).toISOString()
+        const expectedDate = formatHistoryDate(localDate)
+        const meta = formatHistoryMeta(
+          {
+            id: 101,
+            created_at: localDate,
+            model: "realistic-lcm",
+            duration_seconds: 65
+          },
+          i18n.t
+        )
+        expect(meta).toBe(`#101 · ${expectedDate} · 写实·极速 · 1分05秒`)
+      })
+
+      it("老记录无耗时（duration_seconds 为 null / undefined）时自动省略耗时段", () => {
+        const localDate = new Date(2026, 10, 20, 18, 5).toISOString()
+        const expectedDate = formatHistoryDate(localDate)
+        const meta = formatHistoryMeta(
+          {
+            id: 102,
+            created_at: localDate,
+            model: "realistic-lcm",
+            duration_seconds: null
+          },
+          i18n.t
+        )
+        expect(meta).toBe(`#102 · ${expectedDate} · 写实·极速`)
+      })
+
+      it("未知模型回退原始 id", () => {
+        const localDate = new Date(2026, 10, 20, 18, 5).toISOString()
+        const expectedDate = formatHistoryDate(localDate)
+        const meta = formatHistoryMeta(
+          {
+            id: 103,
+            created_at: localDate,
+            model: "custom-special-model",
+            duration_seconds: 45
+          },
+          i18n.t
+        )
+        expect(meta).toBe(
+          `#103 · ${expectedDate} · custom-special-model · 45秒`
+        )
       })
     })
   })
