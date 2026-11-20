@@ -36,7 +36,11 @@ export const ALLOWED_MODELS = [
   "realistic",
   "majicmix",
   "dreamshaper",
-  "counterfeit"
+  "counterfeit",
+  "photon",
+  "cyberrealistic",
+  "openjourney",
+  "toonyou"
 ] as const
 
 export type GenerationModel = (typeof ALLOWED_MODELS)[number]

@@ -434,7 +434,7 @@ describe("POST /api/gen 服务端校验", () => {
     expect(fetchSpy).not.toHaveBeenCalled()
   })
 
-  it("model 非法（不在五个允许 ID 中）返回 400 不转发", async () => {
+  it("model 非法（不在允许 ID 白名单中）返回 400 不转发", async () => {
     const fetchSpy = vi.spyOn(globalThis, "fetch")
 
     const res = await request(ctx.env, "/api/gen", {
