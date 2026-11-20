@@ -18,7 +18,7 @@ import {
 import { genHistoryImageUrl } from "@/lib/api"
 import { describeApiError } from "@/lib/api-errors"
 import type { GenerationHistoryItem } from "@/lib/api-types"
-import { formatHistoryMeta } from "@/lib/gen"
+import { formatHistoryMeta, formatHistorySubMeta } from "@/lib/gen"
 import { cn } from "cn"
 
 interface HistoryStripProps {
@@ -70,8 +70,9 @@ export function HistoryStrip({
 
   return (
     <div
+      data-testid="history-strip"
       className={cn(
-        "wb-panel flex shrink-0 flex-col gap-2 p-3 text-[#26264A]",
+        "wb-panel wb-history-strip flex shrink-0 flex-col gap-2 p-3 text-[#26264A]",
         className
       )}
     >
@@ -211,8 +212,13 @@ export function HistoryStrip({
         <DialogContent className="wb-dialog-cartoon max-w-2xl p-5">
           <DialogHeader>
             <DialogTitle className="wb-title text-base text-[#26264A] sm:text-lg">
-              {selectedItem ? formatHistoryMeta(selectedItem, t) : ""}
+              {selectedItem ? `#${selectedItem.id}` : ""}
             </DialogTitle>
+            {selectedItem && (
+              <p className="text-xs font-medium text-[#26264A]/75 sm:text-sm">
+                {formatHistorySubMeta(selectedItem, t)}
+              </p>
+            )}
             {selectedItem?.prompt_original && (
               <DialogDescription className="max-h-24 overflow-y-auto whitespace-pre-wrap text-xs font-medium text-[#26264A]/80">
                 {selectedItem.prompt_original}

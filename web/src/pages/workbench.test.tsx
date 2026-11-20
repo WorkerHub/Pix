@@ -12,10 +12,12 @@ import { i18n } from "@/i18n"
 import type { GenerationHistoryItem } from "@/lib/api-types"
 import {
   formatHistoryMeta,
+  formatHistorySubMeta,
   GEN_JOB_STORAGE_KEY,
   HISTORY_POLL_DELAYS,
   writeStoredJob
 } from "@/lib/gen"
+import { PROMPT_HEIGHT_STORAGE_KEY } from "@/lib/prompt-height"
 import { WorkbenchPage } from "@/pages/workbench"
 
 vi.mock("@/lib/api", async (importOriginal) => {
@@ -485,6 +487,7 @@ describe("卡通风格生图页（并入 #14 历史区）", () => {
     const user = userEvent.setup()
     const viewThumbnails = screen.getAllByRole("button", { name: "查看原图" })
     const meta101 = formatHistoryMeta(mockHistoryItems[0], i18n.t)
+    const subMeta101 = formatHistorySubMeta(mockHistoryItems[0], i18n.t)
 
     await user.hover(viewThumbnails[0])
     const histTooltip = await screen.findByRole("tooltip")
@@ -495,7 +498,10 @@ describe("卡通风格生图页（并入 #14 历史区）", () => {
     fireEvent.click(viewThumbnails[0])
 
     const dialog = await screen.findByRole("dialog")
-    expect(within(dialog).getByText(meta101)).toBeInTheDocument()
+    expect(
+      within(dialog).getByRole("heading", { level: 2, name: "#101" })
+    ).toBeInTheDocument()
+    expect(within(dialog).getByText(subMeta101)).toBeInTheDocument()
     expect(within(dialog).getByText("小狗在沙滩冲浪")).toBeInTheDocument()
 
     // 灯箱内关闭
@@ -507,10 +513,13 @@ describe("卡通风格生图页（并入 #14 历史区）", () => {
     // 测试老记录（#102，duration_seconds 为 null）打开灯箱展示元信息（省略耗时段）与提示词
     fireEvent.click(viewThumbnails[1])
     const dialog102 = await screen.findByRole("dialog")
-    const meta102 = formatHistoryMeta(mockHistoryItems[1], i18n.t)
-    expect(within(dialog102).getByText(meta102)).toBeInTheDocument()
-    expect(meta102).not.toContain("秒")
-    expect(meta102).not.toContain("分")
+    const subMeta102 = formatHistorySubMeta(mockHistoryItems[1], i18n.t)
+    expect(
+      within(dialog102).getByRole("heading", { level: 2, name: "#102" })
+    ).toBeInTheDocument()
+    expect(within(dialog102).getByText(subMeta102)).toBeInTheDocument()
+    expect(subMeta102).not.toContain("秒")
+    expect(subMeta102).not.toContain("分")
     expect(within(dialog102).getByText("未来城市夜景")).toBeInTheDocument()
     fireEvent.click(within(dialog102).getByRole("button", { name: "关闭" }))
     await waitFor(() => {
@@ -1018,8 +1027,54 @@ describe("卡通风格生图页（并入 #14 历史区）", () => {
 
     fireEvent.click(viewThumbnails[0])
     const dialog = await screen.findByRole("dialog")
-    expect(within(dialog).getByText(meta)).toBeInTheDocument()
+    const subMeta = formatHistorySubMeta(customItems[0], i18n.t)
+    expect(
+      within(dialog).getByRole("heading", {
+        level: 2,
+        name: `#${customItems[0].id}`
+      })
+    ).toBeInTheDocument()
+    expect(within(dialog).getByText(subMeta)).toBeInTheDocument()
     expect(within(dialog).getByText("未知模型的特殊生成图")).toBeInTheDocument()
+  })
+
+  it("工作台提示词输入框高度持久化恢复，且与 #38 挂载任务恢复互不干扰", async () => {
+    vi.mocked(genApi.status).mockResolvedValue({ state: "running" })
+
+    // 1. 同时写入提示词自定义高度与 #38 任务恢复数据
+    localStorage.setItem(PROMPT_HEIGHT_STORAGE_KEY, "250")
+    writeStoredJob({
+      jobId: "job-restore-38",
+      prompt: "恢复测试提示词",
+      size: "portrait",
+      model: "majicmix",
+      submittedAt: Date.now() - 5000
+    })
+
+    renderPage()
+
+    // 2. 验证提示词高度成功恢复为 250px
+    const textarea = screen.getByPlaceholderText("提示词")
+    expect(textarea).toHaveStyle({ height: "250px" })
+    expect(textarea).toHaveValue("恢复测试提示词")
+
+    // 3. 验证 #38 任务恢复分支正常执行，状态迁移至「生成中」
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "生成中" })).toBeInTheDocument()
+    })
+
+    // 4. 拖动手柄调整提示词高度，验证独立 key 更新且 app-gen-job 未被意外破坏
+    const handle = screen.getByTestId("prompt-resize-handle")
+    fireEvent.pointerDown(handle, { button: 0, clientY: 100, pointerId: 1 })
+    fireEvent.pointerMove(window, { clientY: 140, pointerId: 1 })
+    fireEvent.pointerUp(window, { pointerId: 1 })
+
+    expect(textarea).toHaveStyle({ height: "290px" })
+    expect(localStorage.getItem(PROMPT_HEIGHT_STORAGE_KEY)).toBe("290")
+    // app-gen-job 仍然完好
+    expect(localStorage.getItem(GEN_JOB_STORAGE_KEY)).toContain(
+      "job-restore-38"
+    )
   })
 
   describe("机器连接状态指示（四态 + 15s 轮询 + 前后台切换）", () => {
