@@ -194,6 +194,7 @@
   "generate": {
     "title": "生图",
     "prompt": "提示词",
+    "resizePrompt": "调整提示词输入框高度",
     "size": "尺寸",
     "sizePortrait": "竖图",
     "sizeSquare": "方图",

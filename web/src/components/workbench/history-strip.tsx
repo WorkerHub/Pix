@@ -70,8 +70,9 @@ export function HistoryStrip({
 
   return (
     <div
+      data-testid="history-strip"
       className={cn(
-        "wb-panel flex shrink-0 flex-col gap-2 p-3 text-[#26264A]",
+        "wb-panel wb-history-strip flex shrink-0 flex-col gap-2 p-3 text-[#26264A]",
         className
       )}
     >
