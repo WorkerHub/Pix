@@ -17,6 +17,7 @@ import {
   HISTORY_POLL_DELAYS,
   writeStoredJob
 } from "@/lib/gen"
+import { PROMPT_HEIGHT_STORAGE_KEY } from "@/lib/prompt-height"
 import { WorkbenchPage } from "@/pages/workbench"
 
 vi.mock("@/lib/api", async (importOriginal) => {
@@ -1033,6 +1034,45 @@ describe("卡通风格生图页（并入 #14 历史区）", () => {
     ).toBeInTheDocument()
     expect(within(dialog).getByText(subMeta)).toBeInTheDocument()
     expect(within(dialog).getByText("未知模型的特殊生成图")).toBeInTheDocument()
+  })
+
+  it("工作台提示词输入框高度持久化恢复，且与 #38 挂载任务恢复互不干扰", async () => {
+    vi.mocked(genApi.status).mockResolvedValue({ state: "running" })
+
+    // 1. 同时写入提示词自定义高度与 #38 任务恢复数据
+    localStorage.setItem(PROMPT_HEIGHT_STORAGE_KEY, "250")
+    writeStoredJob({
+      jobId: "job-restore-38",
+      prompt: "恢复测试提示词",
+      size: "portrait",
+      model: "majicmix",
+      submittedAt: Date.now() - 5000
+    })
+
+    renderPage()
+
+    // 2. 验证提示词高度成功恢复为 250px
+    const textarea = screen.getByPlaceholderText("提示词")
+    expect(textarea).toHaveStyle({ height: "250px" })
+    expect(textarea).toHaveValue("恢复测试提示词")
+
+    // 3. 验证 #38 任务恢复分支正常执行，状态迁移至「生成中」
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "生成中" })).toBeInTheDocument()
+    })
+
+    // 4. 拖动手柄调整提示词高度，验证独立 key 更新且 app-gen-job 未被意外破坏
+    const handle = screen.getByTestId("prompt-resize-handle")
+    fireEvent.pointerDown(handle, { button: 0, clientY: 100, pointerId: 1 })
+    fireEvent.pointerMove(window, { clientY: 140, pointerId: 1 })
+    fireEvent.pointerUp(window, { pointerId: 1 })
+
+    expect(textarea).toHaveStyle({ height: "290px" })
+    expect(localStorage.getItem(PROMPT_HEIGHT_STORAGE_KEY)).toBe("290")
+    // app-gen-job 仍然完好
+    expect(localStorage.getItem(GEN_JOB_STORAGE_KEY)).toContain(
+      "job-restore-38"
+    )
   })
 
   describe("机器连接状态指示（四态 + 15s 轮询 + 前后台切换）", () => {
