@@ -233,7 +233,13 @@
     "jobNotFound": "任务不存在或已失效",
     "timeout": "生成超时",
     "recheckOnce": "再查一次",
-    "regenerate": "重新生成"
+    "regenerate": "重新生成",
+    "machineStatus": {
+      "connected": "已连接",
+      "busy": "忙碌",
+      "connecting": "连接中",
+      "offline": "离线"
+    }
   },
   "history": {
     "title": "生成历史",
