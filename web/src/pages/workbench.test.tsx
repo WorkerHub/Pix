@@ -487,7 +487,9 @@ describe("卡通风格生图页（并入 #14 历史区）", () => {
     const meta101 = formatHistoryMeta(mockHistoryItems[0], i18n.t)
 
     await user.hover(viewThumbnails[0])
-    expect(await screen.findByRole("tooltip")).toHaveTextContent(meta101)
+    const histTooltip = await screen.findByRole("tooltip")
+    expect(histTooltip).toHaveTextContent(meta101)
+    expect(histTooltip).toHaveClass("wb-model-tooltip", "w-[270px]")
     await user.unhover(viewThumbnails[0])
 
     fireEvent.click(viewThumbnails[0])

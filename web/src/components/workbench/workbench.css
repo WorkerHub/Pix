@@ -120,6 +120,8 @@ button.wb-toggle-item[data-state="on"] {
 }
 
 div.wb-model-tooltip[data-slot="tooltip-content"] {
+  width: 270px;
+  max-width: calc(100vw - 1rem);
   background: #26264a;
   border: 2px solid #26264a;
   border-radius: 10px;

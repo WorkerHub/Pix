@@ -131,7 +131,13 @@ export function HistoryStrip({
                       />
                     </button>
                   </TooltipTrigger>
-                  <TooltipContent side="top" align="center">
+                  <TooltipContent
+                    side="top"
+                    align="center"
+                    sideOffset={6}
+                    collisionPadding={8}
+                    className="wb-model-tooltip z-50 w-[270px] max-w-[calc(100vw-1rem)] rounded-lg border border-[#26264A] bg-[#26264A] px-2.5 py-1.5 text-center text-white shadow-md"
+                  >
                     {formatHistoryMeta(item, t)}
                   </TooltipContent>
                 </Tooltip>

@@ -84,12 +84,12 @@ describe("ControlPanel 模型选项与浮层规格", () => {
     // 1. realistic-lcm (极速：100 秒)
     const lcmBtn = screen.getByRole("radio", { name: "写实·极速" })
     await user.hover(lcmBtn)
-    expect(await screen.findByRole("tooltip")).toHaveTextContent(
+    const tooltip = await screen.findByRole("tooltip")
+    expect(tooltip).toHaveTextContent(
       "Realistic Vision 加 LCM 合并，8 步极速出图"
     )
-    expect(await screen.findByRole("tooltip")).toHaveTextContent(
-      "预计约 100 秒"
-    )
+    expect(tooltip).toHaveTextContent("预计约 100 秒")
+    expect(tooltip).toHaveClass("wb-model-tooltip", "w-[270px]")
     await user.unhover(lcmBtn)
     await waitFor(() => {
       expect(screen.queryByRole("tooltip")).not.toBeInTheDocument()
