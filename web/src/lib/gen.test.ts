@@ -1,5 +1,7 @@
 import { beforeEach, describe, expect, it } from "vitest"
+import type { GenerationHistoryItem } from "@/lib/api-types"
 import {
+  appendHistoryItems,
   calcEstimatedProgress,
   clearStoredJob,
   elapsedSeconds,
@@ -8,7 +10,9 @@ import {
   GEN_POLL_INTERVAL_MS,
   GEN_PROGRESS_CAP,
   GEN_TIMEOUT_MS,
+  HISTORY_POLL_DELAYS,
   isTimedOut,
+  mergeHistoryItems,
   readStoredJob,
   writeStoredJob
 } from "@/lib/gen"
@@ -153,6 +157,101 @@ describe("gen helpers", () => {
       const pFast = calcEstimatedProgress(50 * 1000, "realistic-lcm")
       const pSlow = calcEstimatedProgress(50 * 1000, "realistic")
       expect(pFast).toBeGreaterThan(pSlow)
+    })
+  })
+
+  describe("HISTORY_POLL_DELAYS", () => {
+    it("定义了 11 次有界退避间隔，总窗口 25.5 秒（≥20s），覆盖最坏落库时延", () => {
+      expect(HISTORY_POLL_DELAYS).toEqual([
+        500, 1000, 1500, 2000, 2500, 3000, 3000, 3000, 3000, 3000, 3000
+      ])
+      const total = HISTORY_POLL_DELAYS.reduce((a, b) => a + b, 0)
+      expect(total).toBe(25500)
+      expect(total).toBeGreaterThanOrEqual(20000)
+    })
+  })
+
+  describe("mergeHistoryItems & appendHistoryItems", () => {
+    const makeItem = (
+      id: number,
+      jobId: string,
+      prompt = "prompt"
+    ): GenerationHistoryItem => ({
+      id,
+      job_id: jobId,
+      model: "realistic-lcm",
+      prompt_original: prompt,
+      prompt_effective: prompt,
+      size: "portrait",
+      created_at: "2026-11-20T10:00:00Z",
+      imageUrl: `/api/gen/history/${id}/image`
+    })
+
+    describe("mergeHistoryItems", () => {
+      it("处理空数组", () => {
+        const item1 = makeItem(1, "job-1")
+        expect(mergeHistoryItems([], [])).toEqual([])
+        expect(mergeHistoryItems([item1], [])).toEqual([item1])
+        expect(mergeHistoryItems([], [item1])).toEqual([item1])
+      })
+
+      it("新条目优先置前，并按 job_id 去除 prev 中的旧同名条目", () => {
+        const old1 = makeItem(1, "job-1", "旧条目1")
+        const old2 = makeItem(2, "job-2", "旧条目2")
+        const new1 = makeItem(10, "job-1", "更新后的条目1")
+        const new3 = makeItem(3, "job-3", "全新条目3")
+
+        const merged = mergeHistoryItems([new3, new1], [old1, old2])
+
+        // new3 和 new1 必须排在头部，old1 因 job-1 重复被剔除，保留 old2
+        expect(merged).toHaveLength(3)
+        expect(merged[0].job_id).toBe("job-3")
+        expect(merged[1].job_id).toBe("job-1")
+        expect(merged[1].prompt_original).toBe("更新后的条目1")
+        expect(merged[2].job_id).toBe("job-2")
+      })
+
+      it("按 id 去重（兜底无 job_id 或跨 job 冲突）", () => {
+        const old1 = makeItem(100, "", "id 为 100 无 jobId")
+        const new1 = makeItem(100, "job-new", "新条目 id 仍为 100")
+
+        const merged = mergeHistoryItems([new1], [old1])
+        expect(merged).toHaveLength(1)
+        expect(merged[0].job_id).toBe("job-new")
+      })
+
+      it("过滤 incoming 与 prev 各自内部的重复项", () => {
+        const in1 = makeItem(1, "job-1")
+        const in2 = makeItem(2, "job-1") // 重复 job_id
+        const prev1 = makeItem(3, "job-3")
+        const prev2 = makeItem(4, "job-3") // 重复 job_id
+
+        const merged = mergeHistoryItems([in1, in2], [prev1, prev2])
+        expect(merged).toHaveLength(2)
+        expect(merged.map((it) => it.job_id)).toEqual(["job-1", "job-3"])
+      })
+    })
+
+    describe("appendHistoryItems", () => {
+      it("追加新页，按 job_id 与 id 过滤已存在的条目", () => {
+        const existing1 = makeItem(1, "job-1")
+        const existing2 = makeItem(2, "job-2")
+        const incomingDup = makeItem(10, "job-1") // job-1 重复
+        const incomingNew = makeItem(3, "job-3")
+
+        const appended = appendHistoryItems(
+          [existing1, existing2],
+          [incomingDup, incomingNew]
+        )
+
+        expect(appended).toHaveLength(3)
+        expect(appended.map((it) => it.job_id)).toEqual([
+          "job-1",
+          "job-2",
+          "job-3"
+        ])
+        expect(appended[0].id).toBe(1) // 保留 existing 中的版本
+      })
     })
   })
 })

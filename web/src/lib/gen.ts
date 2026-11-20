@@ -1,4 +1,5 @@
 import {
+  type GenerationHistoryItem,
   type GenerationModel,
   type GenerateSize,
   MODEL_OPTIONS
@@ -100,8 +101,7 @@ export function estimatedGenDurationSec(model?: GenerationModel): number {
 /** 进度封顶（真图到达前最多 95%）。 */
 export const GEN_PROGRESS_CAP = 95
 
-/**
- * 进度估算曲线：ease-out 缓动，真图到达前 95% 封顶。
+/** 进度估算曲线：ease-out 缓动，真图到达前 95% 封顶。
  * 沿用 #16 曲线口径，按模型分档时长。
  */
 export function calcEstimatedProgress(
@@ -114,4 +114,107 @@ export function calcEstimatedProgress(
     GEN_PROGRESS_CAP,
     Math.floor((1 - (1 - raw) ** 1.6) * GEN_PROGRESS_CAP)
   )
+}
+
+/**
+ * 历史入库轮询退避间隔（毫秒）：上限 11 次，总计 25.5 秒窗口（≥20s）。
+ * 覆盖取图接口最坏情况下的 15s 机器超时（AbortSignal.timeout(15000)）以及后续 R2 / D1 异步落库耗时，
+ * 同时保持严格有界（上限 11 次退避），一旦目标 jobId 出现即刻停止。
+ */
+export const HISTORY_POLL_DELAYS: readonly number[] = [
+  500, 1000, 1500, 2000, 2500, 3000, 3000, 3000, 3000, 3000, 3000
+]
+
+/**
+ * 合并刷新历史记录：将 incoming（第 1 页拉取结果）优先置于前部，
+ * 优先按 job_id 去重（兜底按 id 去重），并剔除 prev 中的同项及潜在重复项。
+ */
+export function mergeHistoryItems(
+  incoming: GenerationHistoryItem[],
+  prev: GenerationHistoryItem[]
+): GenerationHistoryItem[] {
+  const seenJobIds = new Set<string>()
+  const seenIds = new Set<number>()
+  const result: GenerationHistoryItem[] = []
+
+  for (const item of incoming) {
+    const hasJobId = Boolean(item.job_id && item.job_id.trim().length > 0)
+    const jobIdKey = hasJobId ? item.job_id.trim() : null
+
+    if (
+      (jobIdKey && seenJobIds.has(jobIdKey)) ||
+      (typeof item.id === "number" && seenIds.has(item.id))
+    ) {
+      continue
+    }
+
+    if (jobIdKey) seenJobIds.add(jobIdKey)
+    if (typeof item.id === "number") seenIds.add(item.id)
+    result.push(item)
+  }
+
+  for (const item of prev) {
+    const hasJobId = Boolean(item.job_id && item.job_id.trim().length > 0)
+    const jobIdKey = hasJobId ? item.job_id.trim() : null
+
+    if (
+      (jobIdKey && seenJobIds.has(jobIdKey)) ||
+      (typeof item.id === "number" && seenIds.has(item.id))
+    ) {
+      continue
+    }
+
+    if (jobIdKey) seenJobIds.add(jobIdKey)
+    if (typeof item.id === "number") seenIds.add(item.id)
+    result.push(item)
+  }
+
+  return result
+}
+
+/**
+ * 分页追加历史记录：将 incoming 追加到 existing 之后，
+ * 优先按 job_id 去重（兜底按 id 去重）。
+ */
+export function appendHistoryItems(
+  existing: GenerationHistoryItem[],
+  incoming: GenerationHistoryItem[]
+): GenerationHistoryItem[] {
+  const seenJobIds = new Set<string>()
+  const seenIds = new Set<number>()
+  const result: GenerationHistoryItem[] = []
+
+  for (const item of existing) {
+    const hasJobId = Boolean(item.job_id && item.job_id.trim().length > 0)
+    const jobIdKey = hasJobId ? item.job_id.trim() : null
+
+    if (
+      (jobIdKey && seenJobIds.has(jobIdKey)) ||
+      (typeof item.id === "number" && seenIds.has(item.id))
+    ) {
+      continue
+    }
+
+    if (jobIdKey) seenJobIds.add(jobIdKey)
+    if (typeof item.id === "number") seenIds.add(item.id)
+    result.push(item)
+  }
+
+  for (const item of incoming) {
+    const hasJobId = Boolean(item.job_id && item.job_id.trim().length > 0)
+    const jobIdKey = hasJobId ? item.job_id.trim() : null
+
+    if (
+      (jobIdKey && seenJobIds.has(jobIdKey)) ||
+      (typeof item.id === "number" && seenIds.has(item.id))
+    ) {
+      continue
+    }
+
+    if (jobIdKey) seenJobIds.add(jobIdKey)
+    if (typeof item.id === "number") seenIds.add(item.id)
+    result.push(item)
+  }
+
+  return result
 }
