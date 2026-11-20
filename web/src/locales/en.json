@@ -201,9 +201,26 @@
       "realistic-lcm": "Realistic Turbo",
       "realistic": "Realistic",
       "majicmix": "Portrait East",
+      "photon": "Portrait Photon",
+      "cyberrealistic": "Realistic Doc",
       "dreamshaper": "Dream",
-      "counterfeit": "Anime"
+      "openjourney": "Journey",
+      "counterfeit": "Anime",
+      "toonyou": "Cartoon"
     },
+    "modelIntro": {
+      "realistic-lcm": "Realistic Vision with LCM merge, 8-step lightning generation",
+      "realistic": "Original Realistic Vision photorealism",
+      "majicmix": "East Asian realistic portraits",
+      "photon": "Photorealistic portraits with delicate skin and lighting",
+      "cyberrealistic": "Versatile photorealism for steady portraits and landscapes",
+      "dreamshaper": "Dreamy and soft versatile art style",
+      "openjourney": "Midjourney-inspired illustration style",
+      "counterfeit": "2D anime style",
+      "toonyou": "Pure cartoon style with crisp outlines"
+    },
+    "estimatedTimeSeconds": "About {{seconds}} seconds",
+    "estimatedTimeMinutes": "About {{minutes}} minutes",
     "submit": "Generate",
     "submitting": "Submitting…",
     "generating": "Generating",

@@ -7,6 +7,7 @@ import {
   clearStoredJob,
   elapsedSeconds,
   estimatedGenDurationSec,
+  formatEstimatedDuration,
   formatHistoryDate,
   formatHistoryDuration,
   formatHistoryMeta,
@@ -18,6 +19,7 @@ import {
   HISTORY_POLL_DELAYS,
   isTimedOut,
   mergeHistoryItems,
+  modelEstimatedDurationText,
   readStoredJob,
   writeStoredJob
 } from "@/lib/gen"
@@ -130,13 +132,43 @@ describe("gen helpers", () => {
   })
 
   describe("estimatedGenDurationSec & calcEstimatedProgress", () => {
-    it("预估时长按模型分两档", () => {
+    it("预估时长按模型分两档（共 9 款模型）", () => {
+      // 写实·极速 100 秒
       expect(estimatedGenDurationSec("realistic-lcm")).toBe(100)
+
+      // 其余 8 款模型均为 250 秒
       expect(estimatedGenDurationSec("realistic")).toBe(250)
       expect(estimatedGenDurationSec("majicmix")).toBe(250)
+      expect(estimatedGenDurationSec("photon")).toBe(250)
+      expect(estimatedGenDurationSec("cyberrealistic")).toBe(250)
       expect(estimatedGenDurationSec("dreamshaper")).toBe(250)
+      expect(estimatedGenDurationSec("openjourney")).toBe(250)
       expect(estimatedGenDurationSec("counterfeit")).toBe(250)
+      expect(estimatedGenDurationSec("toonyou")).toBe(250)
+
+      // 未知或未指定回落 250 秒
       expect(estimatedGenDurationSec(undefined)).toBe(250)
+    })
+
+    it("预估时长文案格式化符合规范", async () => {
+      await i18n.changeLanguage("zh")
+      expect(formatEstimatedDuration(100, i18n.t)).toBe("预计约 100 秒")
+      expect(formatEstimatedDuration(250, i18n.t)).toBe("预计约 4 分钟")
+      expect(modelEstimatedDurationText("realistic-lcm", i18n.t)).toBe(
+        "预计约 100 秒"
+      )
+      expect(modelEstimatedDurationText("realistic", i18n.t)).toBe(
+        "预计约 4 分钟"
+      )
+      expect(modelEstimatedDurationText("photon", i18n.t)).toBe("预计约 4 分钟")
+      expect(modelEstimatedDurationText("toonyou", i18n.t)).toBe(
+        "预计约 4 分钟"
+      )
+
+      await i18n.changeLanguage("en")
+      expect(formatEstimatedDuration(100, i18n.t)).toBe("About 100 seconds")
+      expect(formatEstimatedDuration(250, i18n.t)).toBe("About 4 minutes")
+      await i18n.changeLanguage("zh")
     })
 
     it("进度估算初始为 0，单调递增且封顶 95%", () => {
