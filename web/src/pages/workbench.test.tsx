@@ -993,4 +993,311 @@ describe("卡通风格生图页（并入 #14 历史区）", () => {
     expect(within(dialog).getByText(meta)).toBeInTheDocument()
     expect(within(dialog).getByText("未知模型的特殊生成图")).toBeInTheDocument()
   })
+
+  describe("机器连接状态指示（四态 + 15s 轮询 + 前后台切换）", () => {
+    it("挂载初始化与健康通过：首屏请求在途显示「连接中」，成功返回后显示「已连接」", async () => {
+      let resolveHealth!: (val: any) => void
+      const healthPromise = new Promise((resolve) => {
+        resolveHealth = resolve
+      })
+      vi.mocked(genApi.health).mockReturnValueOnce(healthPromise as any)
+
+      renderPage()
+
+      // 1. 请求在途（in-flight）状态：显示「连接中」
+      const indicator = screen.getByTestId("machine-status")
+      expect(indicator).toHaveAttribute("data-status", "connecting")
+      expect(screen.getByTestId("machine-status-label")).toHaveTextContent(
+        "连接中"
+      )
+      expect(screen.getByTestId("machine-status-dot")).toHaveClass(
+        "bg-[#38BDF8]"
+      )
+
+      // 2. 健康检查返回通过且空闲：切换为「已连接」
+      await act(async () => {
+        resolveHealth({ online: true, ready: true })
+      })
+
+      await waitFor(() => {
+        expect(indicator).toHaveAttribute("data-status", "connected")
+      })
+      expect(screen.getByTestId("machine-status-label")).toHaveTextContent(
+        "已连接"
+      )
+      expect(screen.getByTestId("machine-status-dot")).toHaveClass(
+        "bg-[#2FE0C8]"
+      )
+    })
+
+    it("健康检查失败或机器不可达：显示「离线」，生成按钮禁用", async () => {
+      vi.mocked(genApi.health).mockResolvedValue({ online: false })
+      renderPage()
+
+      const indicator = await screen.findByTestId("machine-status")
+      await waitFor(() => {
+        expect(indicator).toHaveAttribute("data-status", "offline")
+      })
+      expect(screen.getByTestId("machine-status-label")).toHaveTextContent(
+        "离线"
+      )
+      expect(screen.getByTestId("machine-status-dot")).toHaveClass(
+        "bg-[#F43F5E]"
+      )
+      expect(screen.getByRole("button", { name: "生成" })).toBeDisabled()
+    })
+
+    it("机器处于闲置挂起后首访唤醒的等待期（ready === false）：显示「连接中」", async () => {
+      vi.mocked(genApi.health).mockResolvedValue({ online: true, ready: false })
+      renderPage()
+
+      const indicator = await screen.findByTestId("machine-status")
+      await waitFor(() => {
+        expect(indicator).toHaveAttribute("data-status", "connecting")
+      })
+      expect(screen.getByTestId("machine-status-label")).toHaveTextContent(
+        "连接中"
+      )
+      expect(screen.getByTestId("machine-status-dot")).toHaveClass(
+        "bg-[#38BDF8]"
+      )
+    })
+
+    it("生图联动：提交与生成过程中指示器转为「忙碌」，完成后按健康结果落回「已连接」", async () => {
+      vi.useFakeTimers({ shouldAdvanceTime: true })
+      vi.mocked(genApi.submit).mockResolvedValue({ jobId: "job-status-busy" })
+      vi.mocked(genApi.status).mockResolvedValue({ state: "done" })
+      vi.mocked(genApi.health).mockResolvedValue({ online: true, ready: true })
+
+      renderPage()
+
+      // 输入提示词并点击生成
+      const textarea = screen.getByPlaceholderText("提示词")
+      fireEvent.change(textarea, { target: { value: "绚丽的霓虹光影" } })
+      const submitBtn = screen.getByRole("button", { name: "生成" })
+      fireEvent.click(submitBtn)
+
+      const indicator = screen.getByTestId("machine-status")
+      // 提交中即刻转为「忙碌」
+      expect(indicator).toHaveAttribute("data-status", "busy")
+      expect(screen.getByTestId("machine-status-label")).toHaveTextContent(
+        "忙碌"
+      )
+      expect(screen.getByTestId("machine-status-dot")).toHaveClass(
+        "bg-[#FFD23F]"
+      )
+
+      await waitFor(() => {
+        expect(genApi.submit).toHaveBeenCalled()
+      })
+      // 生成中继续保持「忙碌」
+      expect(indicator).toHaveAttribute("data-status", "busy")
+
+      // 推进 5 秒，任务完成出图
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(5000)
+      })
+
+      // 完成后自动触发健康检查，落回「已连接」
+      await waitFor(() => {
+        expect(indicator).toHaveAttribute("data-status", "connected")
+      })
+      expect(screen.getByTestId("machine-status-label")).toHaveTextContent(
+        "已连接"
+      )
+    })
+
+    it("生图失败联动：任务失败后触发健康检查，健康检查发现离线则落回「离线」", async () => {
+      vi.useFakeTimers({ shouldAdvanceTime: true })
+      vi.mocked(genApi.submit).mockResolvedValue({ jobId: "job-status-fail" })
+      vi.mocked(genApi.status).mockResolvedValue({ state: "error" })
+      // 完成后的健康检查返回离线
+      vi.mocked(genApi.health).mockResolvedValue({ online: false })
+
+      renderPage()
+
+      const textarea = screen.getByPlaceholderText("提示词")
+      fireEvent.change(textarea, { target: { value: "失败测试任务" } })
+      fireEvent.click(screen.getByRole("button", { name: "生成" }))
+
+      await waitFor(() => {
+        expect(
+          screen.getByRole("button", { name: "生成中" })
+        ).toBeInTheDocument()
+      })
+
+      // 推进 5 秒让 checkJobStatus 收到 error
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(5000)
+      })
+
+      // 画布显示生成失败，状态指示器落回离线
+      const indicator = screen.getByTestId("machine-status")
+      await waitFor(() => {
+        expect(indicator).toHaveAttribute("data-status", "offline")
+      })
+      expect(screen.getByTestId("machine-status-label")).toHaveTextContent(
+        "离线"
+      )
+    })
+
+    it("离线状态点击「重新检查」：在途呈现「连接中」，恢复后转为「已连接」", async () => {
+      vi.mocked(genApi.health).mockResolvedValueOnce({ online: false })
+      renderPage()
+
+      const indicator = await screen.findByTestId("machine-status")
+      await waitFor(() => {
+        expect(indicator).toHaveAttribute("data-status", "offline")
+      })
+
+      let resolveRecheck!: (val: any) => void
+      const recheckPromise = new Promise((resolve) => {
+        resolveRecheck = resolve
+      })
+      vi.mocked(genApi.health).mockReturnValueOnce(recheckPromise as any)
+
+      // 点击画布中央的「重新检查」按钮
+      const recheckBtn = screen.getByRole("button", { name: "重新检查" })
+      fireEvent.click(recheckBtn)
+
+      // 检查在途期间指示器切换为「连接中」
+      expect(indicator).toHaveAttribute("data-status", "connecting")
+      expect(screen.getByTestId("machine-status-label")).toHaveTextContent(
+        "连接中"
+      )
+
+      // 检查完成恢复
+      await act(async () => {
+        resolveRecheck({ online: true, ready: true })
+      })
+
+      await waitFor(() => {
+        expect(indicator).toHaveAttribute("data-status", "connected")
+      })
+      expect(screen.getByTestId("machine-status-label")).toHaveTextContent(
+        "已连接"
+      )
+    })
+
+    it("15 秒健康轮询：空闲态每 15s 轮询一次，生成进行中暂停健康轮询", async () => {
+      vi.useFakeTimers({ shouldAdvanceTime: true })
+      vi.mocked(genApi.health).mockResolvedValue({ online: true, ready: true })
+      renderPage()
+
+      await waitFor(() => {
+        expect(genApi.health).toHaveBeenCalledTimes(1)
+      })
+
+      // 推进 15 秒：触发第二次健康检查
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(15000)
+      })
+      expect(genApi.health).toHaveBeenCalledTimes(2)
+
+      // 推进 15 秒：触发第三次健康检查
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(15000)
+      })
+      expect(genApi.health).toHaveBeenCalledTimes(3)
+
+      // 提交生成任务进入生成中状态
+      vi.mocked(genApi.submit).mockResolvedValue({ jobId: "job-poll-pause" })
+      vi.mocked(genApi.status).mockResolvedValue({ state: "running" })
+
+      const textarea = screen.getByPlaceholderText("提示词")
+      fireEvent.change(textarea, { target: { value: "轮询暂停验证" } })
+      fireEvent.click(screen.getByRole("button", { name: "生成" }))
+
+      await waitFor(() => {
+        expect(
+          screen.getByRole("button", { name: "生成中" })
+        ).toBeInTheDocument()
+      })
+
+      const healthCallsBefore = vi.mocked(genApi.health).mock.calls.length
+
+      // 在生成中推进 30 秒（包含两次 15s 周期）
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(30000)
+      })
+
+      // 验证生成期间 15 秒健康检查轮询被完全暂停，没有产生额外的 health 调用
+      expect(vi.mocked(genApi.health).mock.calls.length).toBe(healthCallsBefore)
+    })
+
+    it("页面切到后台暂停轮询，切回前台立即补查一次健康检查", async () => {
+      vi.useFakeTimers({ shouldAdvanceTime: true })
+      vi.mocked(genApi.health).mockResolvedValue({ online: true, ready: true })
+      renderPage()
+
+      await waitFor(() => {
+        expect(genApi.health).toHaveBeenCalledTimes(1)
+      })
+
+      // 模拟页面切到后台
+      Object.defineProperty(document, "visibilityState", {
+        configurable: true,
+        value: "hidden"
+      })
+      fireEvent(document, new Event("visibilitychange"))
+
+      // 在后台推进 30 秒：健康轮询应已被暂停
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(30000)
+      })
+      expect(genApi.health).toHaveBeenCalledTimes(1)
+
+      // 模拟切回前台：立即补查一次健康检查
+      Object.defineProperty(document, "visibilityState", {
+        configurable: true,
+        value: "visible"
+      })
+      fireEvent(document, new Event("visibilitychange"))
+
+      expect(genApi.health).toHaveBeenCalledTimes(2)
+
+      // 恢复前台后，推进 15 秒继续正常轮询
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(15000)
+      })
+      expect(genApi.health).toHaveBeenCalledTimes(3)
+    })
+
+    it("与 #38 挂载恢复不冲突：未超时任务恢复后指示器保持「忙碌」", async () => {
+      // 模拟 1 分钟前提交的未超时任务
+      const freshTime = Date.now() - 60 * 1000
+      writeStoredJob({
+        jobId: "job-fresh-resume",
+        prompt: "恢复中任务",
+        size: "portrait",
+        submittedAt: freshTime
+      })
+
+      vi.mocked(genApi.status).mockResolvedValue({ state: "running" })
+
+      renderPage()
+
+      // 恢复中任务：指示器直接显示为「忙碌」
+      const indicator = screen.getByTestId("machine-status")
+      expect(indicator).toHaveAttribute("data-status", "busy")
+      expect(screen.getByTestId("machine-status-label")).toHaveTextContent(
+        "忙碌"
+      )
+      expect(screen.getByRole("button", { name: "生成中" })).toBeInTheDocument()
+    })
+
+    it("英文环境下四态指示文案正确渲染", async () => {
+      await i18n.changeLanguage("en")
+      vi.mocked(genApi.health).mockResolvedValue({ online: true, ready: true })
+      renderPage()
+
+      const indicator = await screen.findByTestId("machine-status")
+      await waitFor(() => {
+        expect(indicator).toHaveAttribute("data-status", "connected")
+      })
+      expect(screen.getByTestId("machine-status-label")).toHaveTextContent(
+        "Connected"
+      )
+    })
+  })
 })
