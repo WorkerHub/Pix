@@ -227,7 +227,9 @@
     "view": "查看原图",
     "deleteTitle": "删除记录",
     "deleteConfirm": "确定要删除这条生成记录吗？删除后不可恢复。",
-    "deleteError": "删除失败，请稍后重试"
+    "deleteError": "删除失败，请稍后重试",
+    "durationSeconds": "{{seconds}}秒",
+    "durationMinutesSeconds": "{{minutes}}分{{seconds}}秒"
   },
   "settings": {
     "title": "设置",
