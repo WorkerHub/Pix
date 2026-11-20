@@ -1075,7 +1075,7 @@ describe("卡通风格生图页（并入 #14 历史区）", () => {
     )
   })
 
-  describe("机器连接状态指示（四态 + 15s 轮询 + 前后台切换）", () => {
+  describe("机器连接状态指示（四态 + 事件驱动 + 5 分钟交互节流 + 回前台补查）", () => {
     it("挂载初始化与健康通过：首屏请求在途显示「连接中」，成功返回后显示「已连接」", async () => {
       let resolveHealth!: (val: any) => void
       const healthPromise = new Promise((resolve) => {
@@ -1260,7 +1260,7 @@ describe("卡通风格生图页（并入 #14 历史区）", () => {
       )
     })
 
-    it("15 秒健康轮询：空闲态每 15s 轮询一次，生成进行中暂停健康轮询", async () => {
+    it("无定时器轮询：空闲态推进时间无交互零查询，状态停在最后一次结果", async () => {
       vi.useFakeTimers({ shouldAdvanceTime: true })
       vi.mocked(genApi.health).mockResolvedValue({ online: true, ready: true })
       renderPage()
@@ -1269,24 +1269,85 @@ describe("卡通风格生图页（并入 #14 历史区）", () => {
         expect(genApi.health).toHaveBeenCalledTimes(1)
       })
 
-      // 推进 15 秒：触发第二次健康检查
+      const indicator = screen.getByTestId("machine-status")
+      expect(indicator).toHaveAttribute("data-status", "connected")
+
+      // 推进 15 秒、30 秒、5 分钟、10 分钟：无任何用户交互，零查询
       await act(async () => {
         await vi.advanceTimersByTimeAsync(15000)
       })
+      expect(genApi.health).toHaveBeenCalledTimes(1)
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(30000)
+      })
+      expect(genApi.health).toHaveBeenCalledTimes(1)
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(10 * 60 * 1000)
+      })
+      // 确认无定时器周期轮询，健康检查次数仍为 1，状态停在最后一次结果
+      expect(genApi.health).toHaveBeenCalledTimes(1)
+      expect(indicator).toHaveAttribute("data-status", "connected")
+    })
+
+    it("用户交互触发与 5 分钟节流：多类型交互防连发，满 5 分钟交互才再查，生图进行中跳过", async () => {
+      vi.useFakeTimers({ shouldAdvanceTime: true })
+      vi.mocked(genApi.health).mockResolvedValue({ online: true, ready: true })
+      renderPage()
+
+      await waitFor(() => {
+        expect(genApi.health).toHaveBeenCalledTimes(1)
+      })
+
+      // 挂载后 30 秒内模拟各种交互（mousemove、keydown、pointerdown）
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(10000)
+        fireEvent.mouseMove(window)
+        await vi.advanceTimersByTimeAsync(10000)
+        fireEvent.keyDown(window, { key: "Enter" })
+        await vi.advanceTimersByTimeAsync(10000)
+        fireEvent.pointerDown(window)
+      })
+      // 距首查未满 5 分钟，所有交互均被节流拦截，不产生额外健康检查
+      expect(genApi.health).toHaveBeenCalledTimes(1)
+
+      // 推进至首查满 5 分钟（300 秒）
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(270000)
+      })
+      expect(genApi.health).toHaveBeenCalledTimes(1)
+
+      // 满 5 分钟后触发用户鼠标移动：触发第二次健康检查
+      await act(async () => {
+        fireEvent.mouseMove(window)
+      })
       expect(genApi.health).toHaveBeenCalledTimes(2)
 
-      // 推进 15 秒：触发第三次健康检查
+      // 连续产生键盘、点击与移动等密集交互，验证防连发节流立即生效
       await act(async () => {
-        await vi.advanceTimersByTimeAsync(15000)
+        fireEvent.mouseMove(window)
+        fireEvent.keyDown(window, { key: "a" })
+        fireEvent.pointerDown(window)
+        fireEvent.touchStart(window)
+      })
+      expect(genApi.health).toHaveBeenCalledTimes(2)
+
+      // 再次推进满 5 分钟（300 秒），触发触摸事件：触发第三次健康检查
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(300000)
+        fireEvent.touchStart(window)
       })
       expect(genApi.health).toHaveBeenCalledTimes(3)
 
       // 提交生成任务进入生成中状态
-      vi.mocked(genApi.submit).mockResolvedValue({ jobId: "job-poll-pause" })
+      vi.mocked(genApi.submit).mockResolvedValue({
+        jobId: "job-interactive-gen"
+      })
       vi.mocked(genApi.status).mockResolvedValue({ state: "running" })
 
       const textarea = screen.getByPlaceholderText("提示词")
-      fireEvent.change(textarea, { target: { value: "轮询暂停验证" } })
+      fireEvent.change(textarea, { target: { value: "节流与生图隔离测试" } })
       fireEvent.click(screen.getByRole("button", { name: "生成" }))
 
       await waitFor(() => {
@@ -1295,18 +1356,22 @@ describe("卡通风格生图页（并入 #14 历史区）", () => {
         ).toBeInTheDocument()
       })
 
-      const healthCallsBefore = vi.mocked(genApi.health).mock.calls.length
+      const healthCallsDuringGen = vi.mocked(genApi.health).mock.calls.length
 
-      // 在生成中推进 30 秒（包含两次 15s 周期）
+      // 在生成中推进 5 分钟并产生用户交互
       await act(async () => {
-        await vi.advanceTimersByTimeAsync(30000)
+        await vi.advanceTimersByTimeAsync(300000)
+        fireEvent.mouseMove(window)
+        fireEvent.keyDown(window, { key: "b" })
       })
 
-      // 验证生成期间 15 秒健康检查轮询被完全暂停，没有产生额外的 health 调用
-      expect(vi.mocked(genApi.health).mock.calls.length).toBe(healthCallsBefore)
+      // 验证生成进行中锁定忙碌，用户交互被跳过，不产生健康检查
+      expect(vi.mocked(genApi.health).mock.calls.length).toBe(
+        healthCallsDuringGen
+      )
     })
 
-    it("页面切到后台暂停轮询，切回前台立即补查一次健康检查", async () => {
+    it("页面切到后台不触发交互检查，切回前台立即补查且进入新节流期", async () => {
       vi.useFakeTimers({ shouldAdvanceTime: true })
       vi.mocked(genApi.health).mockResolvedValue({ online: true, ready: true })
       renderPage()
@@ -1322,10 +1387,12 @@ describe("卡通风格生图页（并入 #14 历史区）", () => {
       })
       fireEvent(document, new Event("visibilitychange"))
 
-      // 在后台推进 30 秒：健康轮询应已被暂停
+      // 在后台推进 6 分钟（已过 5 分钟节流）并模拟交互
       await act(async () => {
-        await vi.advanceTimersByTimeAsync(30000)
+        await vi.advanceTimersByTimeAsync(6 * 60 * 1000)
+        fireEvent.mouseMove(window)
       })
+      // 后台不触发健康检查
       expect(genApi.health).toHaveBeenCalledTimes(1)
 
       // 模拟切回前台：立即补查一次健康检查
@@ -1337,9 +1404,19 @@ describe("卡通风格生图页（并入 #14 历史区）", () => {
 
       expect(genApi.health).toHaveBeenCalledTimes(2)
 
-      // 恢复前台后，推进 15 秒继续正常轮询
+      // 刚切回前台即刻触发用户交互（如连续 mousemove 与点击），因进入新一轮 5 分钟节流，不产生额外请求
       await act(async () => {
-        await vi.advanceTimersByTimeAsync(15000)
+        fireEvent.mouseMove(window)
+        fireEvent.pointerDown(window)
+        await vi.advanceTimersByTimeAsync(60000)
+        fireEvent.keyDown(window, { key: "x" })
+      })
+      expect(genApi.health).toHaveBeenCalledTimes(2)
+
+      // 推进满 5 分钟后交互，触发下一次健康检查
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(240000)
+        fireEvent.mouseMove(window)
       })
       expect(genApi.health).toHaveBeenCalledTimes(3)
     })
