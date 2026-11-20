@@ -29,9 +29,9 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      # 复用 docker-publish.yml 同款镜像构建与 gha cache（scope 默认共享），
-      # 测试环境与生产镜像完全一致：CPU 版 PyTorch + ComfyUI v0.9.2 + 运行依赖。
-      # 冷启动完整构建较慢，热缓存下仅重建 machine 代码层。
+      # 测试环境采用与生产 Dockerfile 一致的基础镜像：CPU 版 PyTorch + ComfyUI v0.9.2 + 运行依赖。
+      # gha 缓存按 Git ref 隔离（与 tag 触发的 docker-publish 不共享），此处指定独立 scope=machine-tests；
+      # 首跑/无缓存时进行冷构建，同 PR 再次推送或 main 分支热缓存命中时仅重建 machine 代码层。
       - name: Build machine image
         uses: docker/build-push-action@v6
         with:
@@ -39,15 +39,13 @@ jobs:
           file: machine/Dockerfile
           load: true
           tags: pix-service:test
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          cache-from: type=gha,scope=machine-tests
+          cache-to: type=gha,mode=max,scope=machine-tests
 
       # .dockerignore 排除了 tests（生产镜像瘦身），测试代码经 volume 挂载注入；
       # 覆盖 ENTRYPOINT 直接跑 pytest，不起 ComfyUI/proxy。
       # 不设 SKIP_MODEL_DOWNLOAD：契约测试依赖其默认 False 走真实就绪门逻辑。
       - name: Run machine pytest
-        env:
-          COMFYUI_DIR: /app/ComfyUI
         run: |
           docker run --rm \
             --entrypoint bash \
