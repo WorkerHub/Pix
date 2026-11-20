@@ -12,6 +12,7 @@ import { i18n } from "@/i18n"
 import type { GenerationHistoryItem } from "@/lib/api-types"
 import {
   formatHistoryMeta,
+  formatHistorySubMeta,
   GEN_JOB_STORAGE_KEY,
   HISTORY_POLL_DELAYS,
   writeStoredJob
@@ -485,6 +486,7 @@ describe("卡通风格生图页（并入 #14 历史区）", () => {
     const user = userEvent.setup()
     const viewThumbnails = screen.getAllByRole("button", { name: "查看原图" })
     const meta101 = formatHistoryMeta(mockHistoryItems[0], i18n.t)
+    const subMeta101 = formatHistorySubMeta(mockHistoryItems[0], i18n.t)
 
     await user.hover(viewThumbnails[0])
     expect(await screen.findByRole("tooltip")).toHaveTextContent(meta101)
@@ -493,7 +495,10 @@ describe("卡通风格生图页（并入 #14 历史区）", () => {
     fireEvent.click(viewThumbnails[0])
 
     const dialog = await screen.findByRole("dialog")
-    expect(within(dialog).getByText(meta101)).toBeInTheDocument()
+    expect(
+      within(dialog).getByRole("heading", { level: 2, name: "#101" })
+    ).toBeInTheDocument()
+    expect(within(dialog).getByText(subMeta101)).toBeInTheDocument()
     expect(within(dialog).getByText("小狗在沙滩冲浪")).toBeInTheDocument()
 
     // 灯箱内关闭
@@ -505,10 +510,13 @@ describe("卡通风格生图页（并入 #14 历史区）", () => {
     // 测试老记录（#102，duration_seconds 为 null）打开灯箱展示元信息（省略耗时段）与提示词
     fireEvent.click(viewThumbnails[1])
     const dialog102 = await screen.findByRole("dialog")
-    const meta102 = formatHistoryMeta(mockHistoryItems[1], i18n.t)
-    expect(within(dialog102).getByText(meta102)).toBeInTheDocument()
-    expect(meta102).not.toContain("秒")
-    expect(meta102).not.toContain("分")
+    const subMeta102 = formatHistorySubMeta(mockHistoryItems[1], i18n.t)
+    expect(
+      within(dialog102).getByRole("heading", { level: 2, name: "#102" })
+    ).toBeInTheDocument()
+    expect(within(dialog102).getByText(subMeta102)).toBeInTheDocument()
+    expect(subMeta102).not.toContain("秒")
+    expect(subMeta102).not.toContain("分")
     expect(within(dialog102).getByText("未来城市夜景")).toBeInTheDocument()
     fireEvent.click(within(dialog102).getByRole("button", { name: "关闭" }))
     await waitFor(() => {
@@ -1016,7 +1024,14 @@ describe("卡通风格生图页（并入 #14 历史区）", () => {
 
     fireEvent.click(viewThumbnails[0])
     const dialog = await screen.findByRole("dialog")
-    expect(within(dialog).getByText(meta)).toBeInTheDocument()
+    const subMeta = formatHistorySubMeta(customItems[0], i18n.t)
+    expect(
+      within(dialog).getByRole("heading", {
+        level: 2,
+        name: `#${customItems[0].id}`
+      })
+    ).toBeInTheDocument()
+    expect(within(dialog).getByText(subMeta)).toBeInTheDocument()
     expect(within(dialog).getByText("未知模型的特殊生成图")).toBeInTheDocument()
   })
 
