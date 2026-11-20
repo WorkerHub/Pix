@@ -42,6 +42,10 @@ LORA_NAME = os.getenv("LORA_NAME", DEFAULT_LORA_NAME)
 LORA_DOWNLOAD_URL = os.getenv("LORA_DOWNLOAD_URL", DEFAULT_LORA_URL)
 LORA_SHA256 = os.getenv("LORA_SHA256", DEFAULT_LORA_SHA256)
 
+# Offline Merged Model (Base checkpoint + LCM-LoRA baked in)
+DEFAULT_MERGED_MODEL_NAME = "Realistic_Vision_V6.0_B1_LCM.safetensors"
+MERGED_MODEL_NAME = os.getenv("MERGED_MODEL_NAME", DEFAULT_MERGED_MODEL_NAME)
+
 # majicMIX realistic v7 (Pinned)
 DEFAULT_MAJICMIX_MODEL_NAME = "majicmixRealistic_v7.safetensors"
 DEFAULT_MAJICMIX_DOWNLOAD_URL = "https://huggingface.co/digiplay/majicMIX_realistic_v7/resolve/main/majicmixRealistic_v7.safetensors"
@@ -103,12 +107,14 @@ LORAS = {
 }
 
 # Supported Model Options Catalog
+# "merged": True 表示该模型使用首启时离线合并了 LCM-LoRA 的 checkpoint，
+# 运行时不再挂载 LoraLoader（避免动态补丁导致 OOM）。
 MODEL_REGISTRY = {
     "realistic-lcm": {
         "id": "realistic-lcm",
         "name": "写实·极速",
         "checkpoint_key": "realistic_vision",
-        "use_lcm_lora": True,
+        "merged": True,
         "steps": 8,
         "cfg": 1.5,
         "sampler_name": "lcm",
@@ -119,7 +125,7 @@ MODEL_REGISTRY = {
         "id": "realistic",
         "name": "写实·原版",
         "checkpoint_key": "realistic_vision",
-        "use_lcm_lora": False,
+        "merged": False,
         "steps": 20,
         "cfg": 7.0,
         "sampler_name": "euler_ancestral",
@@ -130,7 +136,7 @@ MODEL_REGISTRY = {
         "id": "majicmix",
         "name": "人像·东方",
         "checkpoint_key": "majicmix",
-        "use_lcm_lora": False,
+        "merged": False,
         "steps": 20,
         "cfg": 7.0,
         "sampler_name": "euler_ancestral",
@@ -141,7 +147,7 @@ MODEL_REGISTRY = {
         "id": "dreamshaper",
         "name": "通用·梦境",
         "checkpoint_key": "dreamshaper",
-        "use_lcm_lora": False,
+        "merged": False,
         "steps": 20,
         "cfg": 7.0,
         "sampler_name": "euler_ancestral",
@@ -152,7 +158,7 @@ MODEL_REGISTRY = {
         "id": "counterfeit",
         "name": "动漫",
         "checkpoint_key": "counterfeit",
-        "use_lcm_lora": False,
+        "merged": False,
         "steps": 20,
         "cfg": 7.0,
         "sampler_name": "euler_ancestral",
@@ -161,7 +167,8 @@ MODEL_REGISTRY = {
     },
 }
 
-DEFAULT_MODEL_ID = os.getenv("DEFAULT_MODEL_ID", "realistic-lcm")
+# 回退条款：LCM 生产验收通过前，默认模型保持 realistic（基座，标准 20 步）。
+DEFAULT_MODEL_ID = os.getenv("DEFAULT_MODEL_ID", "realistic")
 
 # Skip model download (for contract testing / offline builds)
 SKIP_MODEL_DOWNLOAD = os.getenv("SKIP_MODEL_DOWNLOAD", "0").lower() in ("1", "true", "yes")

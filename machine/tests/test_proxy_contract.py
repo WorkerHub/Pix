@@ -140,6 +140,7 @@ def reset_server_state(mock_comfy_server):
         model_manager.checkpoints_ready[k] = False
     for k in model_manager.loras_ready:
         model_manager.loras_ready[k] = False
+    model_manager.merged_ready = False
     model_manager.is_ready = True
     model_manager.lora_ready = True
     tracked_jobs.clear()
@@ -190,13 +191,14 @@ def test_health_when_model_unready(client):
     assert resp.json() == {"ok": True, "comfyReady": False}
 
 
-def test_health_when_lora_unready(client):
-    """LoRA 未就绪 -> 200 {"ok": true, "comfyReady": false}"""
+def test_health_default_realistic_independent_of_lora(client):
+    """默认 realistic 就绪时，LoRA/合并模型未就绪不影响 /health（运行时不再依赖 LoRA）"""
     model_manager.is_ready = True
     model_manager.lora_ready = False
+    model_manager.merged_ready = False
     resp = client.get("/health", headers=AUTH_HEADERS)
     assert resp.status_code == 200
-    assert resp.json() == {"ok": True, "comfyReady": False}
+    assert resp.json() == {"ok": True, "comfyReady": True}
 
 
 def test_health_when_comfy_down(client, mock_comfy_server):
@@ -218,13 +220,13 @@ def test_generate_503_when_not_ready(client):
     assert resp.json() == {"error": "starting"}
 
 
-def test_generate_503_when_lora_unready(client):
-    """checkpoint 就绪但 LoRA 未就绪 -> 503 starting"""
+def test_generate_503_when_merged_not_ready(client):
+    """base checkpoint 就绪但合并模型未就绪时，model=realistic-lcm -> 503 model_not_ready"""
     model_manager.is_ready = True
-    model_manager.lora_ready = False
-    resp = client.post("/generate", json={"prompt": "cyberpunk city"}, headers=AUTH_HEADERS)
+    model_manager.merged_ready = False
+    resp = client.post("/generate", json={"prompt": "cyberpunk city", "model": "realistic-lcm"}, headers=AUTH_HEADERS)
     assert resp.status_code == 503
-    assert resp.json() == {"error": "starting"}
+    assert resp.json() == {"error": "model_not_ready"}
 
 
 def test_generate_400_invalid_prompt(client):
@@ -262,7 +264,7 @@ def test_generate_409_busy_when_queue_occupied(client, mock_comfy_server):
 
 
 def test_generate_202_default_portrait_and_parameters(client, mock_comfy_server):
-    """成功提交生图：默认 portrait 512x768、随机 seed、固定负面词、无 Origin 头"""
+    """成功提交生图：默认 realistic（基座） portrait 512x768、随机 seed、固定负面词、无 Origin 头"""
     resp = client.post("/generate", json={"prompt": "masterpiece, ultra-detailed portrait"}, headers=AUTH_HEADERS)
     assert resp.status_code == 202
     data = resp.json()
@@ -275,38 +277,33 @@ def test_generate_202_default_portrait_and_parameters(client, mock_comfy_server)
     assert last_prompt["prompt_id"] == job_id
     workflow = last_prompt["prompt"]
 
-    # 验证模型节点
+    # 默认模型为 realistic（基座，非合并模型）
     assert workflow["1"]["class_type"] == "CheckpointLoaderSimple"
-    assert workflow["1"]["inputs"]["ckpt_name"] == config.DEFAULT_MODEL_NAME
+    assert workflow["1"]["inputs"]["ckpt_name"] == config.MODEL_NAME
 
-    # 验证 LoRA 加载节点（checkpoint 后串 LCM-LoRA，strength 1.0）
-    assert workflow["8"]["class_type"] == "LoraLoader"
-    assert workflow["8"]["inputs"]["model"] == ["1", 0]
-    assert workflow["8"]["inputs"]["clip"] == ["1", 1]
-    assert workflow["8"]["inputs"]["lora_name"] == config.LORA_NAME
-    assert workflow["8"]["inputs"]["strength_model"] == 1.0
-    assert workflow["8"]["inputs"]["strength_clip"] == 1.0
+    # 验证不再有运行时 LoraLoader 节点（避免动态打补丁导致 OOM）
+    assert "8" not in workflow
 
-    # 验证正负面词（clip 取自 LoRA 节点输出）
+    # 验证正负面词（clip 直连 checkpoint 节点输出）
     assert workflow["2"]["class_type"] == "CLIPTextEncode"
     assert workflow["2"]["inputs"]["text"] == "masterpiece, ultra-detailed portrait"
-    assert workflow["2"]["inputs"]["clip"] == ["8", 1]
+    assert workflow["2"]["inputs"]["clip"] == ["1", 1]
     assert workflow["3"]["class_type"] == "CLIPTextEncode"
     assert workflow["3"]["inputs"]["text"] == config.FIXED_NEGATIVE_PROMPT
-    assert workflow["3"]["inputs"]["clip"] == ["8", 1]
+    assert workflow["3"]["inputs"]["clip"] == ["1", 1]
 
     # 验证尺寸默认 portrait 512x768
     assert workflow["4"]["class_type"] == "EmptyLatentImage"
     assert workflow["4"]["inputs"]["width"] == 512
     assert workflow["4"]["inputs"]["height"] == 768
 
-    # 验证 LCM 采样参数与随机 seed（model 取自 LoRA 节点输出）
+    # 默认 realistic 走标准 20 步 euler_ancestral 采样
     ksampler = workflow["5"]["inputs"]
-    assert ksampler["model"] == ["8", 0]
-    assert ksampler["sampler_name"] == "lcm"
-    assert ksampler["scheduler"] == "sgm_uniform"
-    assert ksampler["steps"] == 8
-    assert ksampler["cfg"] == 1.5
+    assert ksampler["model"] == ["1", 0]
+    assert ksampler["sampler_name"] == "euler_ancestral"
+    assert ksampler["scheduler"] == "normal"
+    assert ksampler["steps"] == 20
+    assert ksampler["cfg"] == 7.0
     assert isinstance(ksampler["seed"], int)
     assert ksampler["seed"] > 0
 
@@ -315,6 +312,30 @@ def test_generate_202_default_portrait_and_parameters(client, mock_comfy_server)
     header_keys = [k.lower() for k in received_headers.keys()]
     assert "origin" not in header_keys
     assert received_headers.get("Host") == f"127.0.0.1:{mock_comfy_server.server_port}"
+
+
+def test_generate_202_lcm_merged_model_direct_connection(client, mock_comfy_server):
+    """model=realistic-lcm 使用离线合并 checkpoint，无 LoraLoader，走 8 步 LCM 采样"""
+    model_manager.checkpoints_ready["realistic_vision"] = True
+    model_manager.merged_ready = True
+    resp = client.post("/generate", json={"prompt": "a portrait", "model": "realistic-lcm"}, headers=AUTH_HEADERS)
+    assert resp.status_code == 202
+    last_prompt = mock_comfy_server.state["last_received_prompt"]
+    workflow = last_prompt["prompt"]
+
+    # 无 LoraLoader 节点
+    assert "8" not in workflow
+
+    # checkpoint 为离线合并模型
+    assert workflow["1"]["inputs"]["ckpt_name"] == config.MERGED_MODEL_NAME
+    assert workflow["2"]["inputs"]["clip"] == ["1", 1]
+    assert workflow["3"]["inputs"]["clip"] == ["1", 1]
+    ksampler = workflow["5"]["inputs"]
+    assert ksampler["model"] == ["1", 0]
+    assert ksampler["sampler_name"] == "lcm"
+    assert ksampler["scheduler"] == "sgm_uniform"
+    assert ksampler["steps"] == 8
+    assert ksampler["cfg"] == 1.5
 
 
 def test_generate_202_square_size(client, mock_comfy_server):

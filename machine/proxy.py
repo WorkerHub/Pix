@@ -125,110 +125,51 @@ async def generate(request: Request):
         job_id = str(uuid.uuid4())
         seed = random.randint(0, 0xFFFFFFFFFFFFFFFF)
         ckpt_filename = model_manager.get_model_filename(model_id)
-        use_lcm_lora = model_cfg.get("use_lcm_lora", False)
-
-        if use_lcm_lora:
-            workflow = {
-                "1": {
-                    "class_type": "CheckpointLoaderSimple",
-                    "inputs": {"ckpt_name": ckpt_filename},
+        workflow = {
+            "1": {
+                "class_type": "CheckpointLoaderSimple",
+                "inputs": {"ckpt_name": ckpt_filename},
+            },
+            "2": {
+                "class_type": "CLIPTextEncode",
+                "inputs": {"text": prompt.strip(), "clip": ["1", 1]},
+            },
+            "3": {
+                "class_type": "CLIPTextEncode",
+                "inputs": {"text": config.FIXED_NEGATIVE_PROMPT, "clip": ["1", 1]},
+            },
+            "4": {
+                "class_type": "EmptyLatentImage",
+                "inputs": {
+                    "width": dims["width"],
+                    "height": dims["height"],
+                    "batch_size": 1,
                 },
-                "8": {
-                    "class_type": "LoraLoader",
-                    "inputs": {
-                        "model": ["1", 0],
-                        "clip": ["1", 1],
-                        "lora_name": config.LORA_NAME,
-                        "strength_model": 1.0,
-                        "strength_clip": 1.0,
-                    },
+            },
+            "5": {
+                "class_type": "KSampler",
+                "inputs": {
+                    "model": ["1", 0],
+                    "positive": ["2", 0],
+                    "negative": ["3", 0],
+                    "latent_image": ["4", 0],
+                    "seed": seed,
+                    "steps": model_cfg["steps"],
+                    "cfg": model_cfg["cfg"],
+                    "sampler_name": model_cfg["sampler_name"],
+                    "scheduler": model_cfg["scheduler"],
+                    "denoise": model_cfg["denoise"],
                 },
-                "2": {
-                    "class_type": "CLIPTextEncode",
-                    "inputs": {"text": prompt.strip(), "clip": ["8", 1]},
-                },
-                "3": {
-                    "class_type": "CLIPTextEncode",
-                    "inputs": {"text": config.FIXED_NEGATIVE_PROMPT, "clip": ["8", 1]},
-                },
-                "4": {
-                    "class_type": "EmptyLatentImage",
-                    "inputs": {
-                        "width": dims["width"],
-                        "height": dims["height"],
-                        "batch_size": 1,
-                    },
-                },
-                "5": {
-                    "class_type": "KSampler",
-                    "inputs": {
-                        "model": ["8", 0],
-                        "positive": ["2", 0],
-                        "negative": ["3", 0],
-                        "latent_image": ["4", 0],
-                        "seed": seed,
-                        "steps": model_cfg["steps"],
-                        "cfg": model_cfg["cfg"],
-                        "sampler_name": model_cfg["sampler_name"],
-                        "scheduler": model_cfg["scheduler"],
-                        "denoise": model_cfg["denoise"],
-                    },
-                },
-                "6": {
-                    "class_type": "VAEDecode",
-                    "inputs": {"samples": ["5", 0], "vae": ["1", 2]},
-                },
-                "7": {
-                    "class_type": "SaveImage",
-                    "inputs": {"filename_prefix": "Pix", "images": ["6", 0]},
-                },
-            }
-        else:
-            workflow = {
-                "1": {
-                    "class_type": "CheckpointLoaderSimple",
-                    "inputs": {"ckpt_name": ckpt_filename},
-                },
-                "2": {
-                    "class_type": "CLIPTextEncode",
-                    "inputs": {"text": prompt.strip(), "clip": ["1", 1]},
-                },
-                "3": {
-                    "class_type": "CLIPTextEncode",
-                    "inputs": {"text": config.FIXED_NEGATIVE_PROMPT, "clip": ["1", 1]},
-                },
-                "4": {
-                    "class_type": "EmptyLatentImage",
-                    "inputs": {
-                        "width": dims["width"],
-                        "height": dims["height"],
-                        "batch_size": 1,
-                    },
-                },
-                "5": {
-                    "class_type": "KSampler",
-                    "inputs": {
-                        "model": ["1", 0],
-                        "positive": ["2", 0],
-                        "negative": ["3", 0],
-                        "latent_image": ["4", 0],
-                        "seed": seed,
-                        "steps": model_cfg["steps"],
-                        "cfg": model_cfg["cfg"],
-                        "sampler_name": model_cfg["sampler_name"],
-                        "scheduler": model_cfg["scheduler"],
-                        "denoise": model_cfg["denoise"],
-                    },
-                },
-                "6": {
-                    "class_type": "VAEDecode",
-                    "inputs": {"samples": ["5", 0], "vae": ["1", 2]},
-                },
-                "7": {
-                    "class_type": "SaveImage",
-                    "inputs": {"filename_prefix": "Pix", "images": ["6", 0]},
-                },
-            }
+            },
+            "6": {
+                "class_type": "VAEDecode",
+                "inputs": {"samples": ["5", 0], "vae": ["1", 2]},
+            },
+            "7": {
+                "class_type": "SaveImage",
+                "inputs": {"filename_prefix": "Pix", "images": ["6", 0]},
+            },
+        }
 
         try:
             timeout = httpx.Timeout(connect=5.0, read=5.0, write=5.0, pool=5.0)

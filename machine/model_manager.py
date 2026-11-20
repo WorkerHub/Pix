@@ -2,7 +2,10 @@ import asyncio
 import hashlib
 import logging
 import os
+import sys
+
 import httpx
+
 from machine import config
 
 logger = logging.getLogger("pix-service.model")
@@ -20,15 +23,21 @@ class ModelManager:
         self.lora_name = config.LORA_NAME
         self.lora_download_url = config.LORA_DOWNLOAD_URL
         self.expected_lora_sha256 = config.LORA_SHA256.lower().strip()
+        self.merged_model_name = config.MERGED_MODEL_NAME
+        self.is_downloading = False
+        self.is_merging = False
+        self.error_message: str | None = None
 
         # Multi-checkpoint / LoRA readiness states
         self.checkpoints_ready: dict[str, bool] = {k: False for k in config.CHECKPOINTS}
         self.loras_ready: dict[str, bool] = {k: False for k in config.LORAS}
+        self.merged_ready: bool = False
         self.active_checkpoints: dict[str, str] = {
             k: v["filename"] for k, v in config.CHECKPOINTS.items()
         }
 
         self.active_model_name = self.model_name
+        self._lock = asyncio.Lock()
 
     @property
     def is_ready(self) -> bool:
@@ -55,8 +64,8 @@ class ModelManager:
         ckpt_key = model_cfg["checkpoint_key"]
         if not self.checkpoints_ready.get(ckpt_key, False):
             return False
-        if model_cfg.get("use_lcm_lora", False):
-            if not self.loras_ready.get("lcm", False):
+        if model_cfg.get("merged", False):
+            if not self.merged_ready:
                 return False
         return True
 
@@ -65,6 +74,12 @@ class ModelManager:
 
     def get_target_path(self) -> str:
         return os.path.join(self.checkpoints_dir, self.model_name)
+
+    def get_merged_path(self) -> str:
+        return os.path.join(self.checkpoints_dir, self.merged_model_name)
+
+    def get_lora_path(self) -> str:
+        return os.path.join(self.loras_dir, self.lora_name)
 
     def get_checkpoint_name(self, checkpoint_key: str) -> str:
         if checkpoint_key in self.active_checkpoints:
@@ -77,6 +92,8 @@ class ModelManager:
         model_cfg = config.MODEL_REGISTRY.get(model_id)
         if not model_cfg:
             return self.active_model_name
+        if model_cfg.get("merged", False):
+            return self.merged_model_name
         ckpt_key = model_cfg["checkpoint_key"]
         return self.get_checkpoint_name(ckpt_key)
 
@@ -108,7 +125,7 @@ class ModelManager:
             return []
         files = []
         for name in os.listdir(self.checkpoints_dir):
-            if name.endswith(".safetensors") or name.endswith(".ckpt"):
+            if name.endswith((".safetensors", ".ckpt")):
                 files.append(name)
         return files
 
@@ -243,7 +260,7 @@ class ModelManager:
             return True
 
         os.makedirs(self.loras_dir, exist_ok=True)
-        target_path = os.path.join(self.loras_dir, self.lora_name)
+        target_path = self.get_lora_path()
 
         if os.path.isfile(target_path):
             logger.info(f"Found LoRA file at {target_path}. Verifying sha256...")
@@ -263,6 +280,99 @@ class ModelManager:
         self.lora_ready = False
         return False
 
+    async def merge_checkpoint(
+        self,
+        base_path: str | None = None,
+        lora_path: str | None = None,
+        output_path: str | None = None,
+    ) -> bool:
+        base_path = base_path or self.get_target_path()
+        lora_path = lora_path or self.get_lora_path()
+        output_path = output_path or self.get_merged_path()
+
+        cmd = [
+            sys.executable,
+            "-m",
+            "machine.merge_lora",
+            "--base-path",
+            base_path,
+            "--lora-path",
+            lora_path,
+            "--output-path",
+            output_path,
+            "--strength",
+            "1.0",
+        ]
+        logger.info(f"Running LoRA merge subprocess: {' '.join(cmd)}")
+        self.is_merging = True
+        self.error_message = None
+        try:
+            env = os.environ.copy()
+            comfy_dir = getattr(config, "COMFYUI_DIR", "/app/ComfyUI")
+            env["PYTHONPATH"] = f"/app:{comfy_dir}:{env.get('PYTHONPATH', '')}"
+
+            proc = await asyncio.create_subprocess_exec(
+                *cmd,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+                env=env,
+            )
+            _stdout, stderr = await proc.communicate()
+            if proc.returncode != 0:
+                err = stderr.decode().strip()
+                msg = f"Merge subprocess failed with code {proc.returncode}: {err}"
+                logger.error(msg)
+                self.error_message = msg
+                return False
+
+            if not os.path.isfile(output_path) or os.path.getsize(output_path) == 0:
+                msg = f"Merged output checkpoint file missing or empty: {output_path}"
+                logger.error(msg)
+                self.error_message = msg
+                return False
+
+            logger.info(f"LoRA merge subprocess succeeded: {output_path}")
+            return True
+        except Exception as e:
+            msg = f"Exception running merge subprocess: {e}"
+            logger.error(msg)
+            self.error_message = msg
+            return False
+        finally:
+            self.is_merging = False
+
+    async def ensure_merged_model(self) -> bool:
+        if config.SKIP_MODEL_DOWNLOAD:
+            logger.info("SKIP_MODEL_DOWNLOAD is set. Marking merged model ready.")
+            self.merged_ready = True
+            self.active_model_name = self.merged_model_name
+            return True
+
+        merged_path = self.get_merged_path()
+        if os.path.isfile(merged_path) and os.path.getsize(merged_path) > 0:
+            logger.info(f"Found existing merged model at {merged_path}. Skipping merge.")
+            self.merged_ready = True
+            self.active_model_name = self.merged_model_name
+            return True
+
+        # Need base checkpoint and LoRA to merge
+        if not self.checkpoints_ready.get("realistic_vision", False):
+            logger.error("Base model not ready. Cannot merge.")
+            return False
+        if not self.loras_ready.get("lcm", False):
+            logger.error("LoRA not ready. Cannot merge.")
+            return False
+
+        # Execute merge in child process (serialized against concurrent starts)
+        async with self._lock:
+            merge_ok = await self.merge_checkpoint()
+        if merge_ok:
+            self.merged_ready = True
+            self.active_model_name = self.merged_model_name
+            logger.info(f"Active model set to merged model: {self.active_model_name}")
+            return True
+        return False
+
     async def ensure_all_models(self) -> None:
         if config.SKIP_MODEL_DOWNLOAD:
             logger.info("SKIP_MODEL_DOWNLOAD is set. Marking all models ready.")
@@ -270,35 +380,35 @@ class ModelManager:
                 self.checkpoints_ready[k] = True
             for k in config.LORAS:
                 self.loras_ready[k] = True
-            self.is_ready = True
-            self.lora_ready = True
+            self.merged_ready = True
+            self.active_model_name = self.merged_model_name
             return
 
-        default_cfg = config.MODEL_REGISTRY.get(
-            config.DEFAULT_MODEL_ID, config.MODEL_REGISTRY.get("realistic-lcm", {})
-        )
-        default_ckpt_key = default_cfg.get("checkpoint_key", "realistic_vision")
-        needs_lora = default_cfg.get("use_lcm_lora", True)
-
-        logger.info(f"Ensuring default checkpoint ({default_ckpt_key}) and necessary LoRAs...")
-        tasks = [self.ensure_checkpoint(default_ckpt_key)]
-        if needs_lora:
-            tasks.append(self.ensure_lora())
-        await asyncio.gather(*tasks)
-
-        # Ensure the remaining checkpoints
+        # Ensure every base checkpoint (download + verify)
         for cp_key in config.CHECKPOINTS:
-            if cp_key != default_ckpt_key:
-                try:
-                    await self.ensure_checkpoint(cp_key)
-                except Exception as e:
-                    logger.error(f"Failed to ensure checkpoint {cp_key}: {e}")
+            try:
+                await self.ensure_checkpoint(cp_key)
+            except Exception as e:
+                logger.error(f"Failed to ensure checkpoint {cp_key}: {e}")
 
-        if not self.lora_ready:
+        # Ensure LoRA (only needed to build the merged checkpoint)
+        merged_needed = any(
+            cfg.get("merged", False) for cfg in config.MODEL_REGISTRY.values()
+        )
+        if merged_needed:
             try:
                 await self.ensure_lora()
             except Exception as e:
                 logger.error(f"Failed to ensure LoRA: {e}")
+
+        # Build merged checkpoint for merged-flag models (currently only realistic-lcm)
+        for model_id, cfg in config.MODEL_REGISTRY.items():
+            if cfg.get("merged", False):
+                try:
+                    await self.ensure_merged_model()
+                except Exception as e:
+                    logger.error(f"Failed to ensure merged model for {model_id}: {e}")
+                break
 
 
 model_manager = ModelManager()
