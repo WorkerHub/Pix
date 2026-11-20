@@ -120,7 +120,7 @@ export function HistoryStrip({
                     <button
                       type="button"
                       onClick={() => setSelectedItem(item)}
-                      title={t("history.view")}
+                      aria-label={t("history.view")}
                       className="relative h-16 w-16 shrink-0 overflow-hidden rounded-lg border-2 border-[#26264A] bg-[#1E1E3F] transition-opacity hover:opacity-90"
                     >
                       <img

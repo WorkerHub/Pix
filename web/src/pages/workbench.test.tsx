@@ -386,7 +386,7 @@ describe("卡通风格生图页（并入 #14 历史区）", () => {
 
     // 3. 悬浮展示 Tooltip 元信息浮层，点击缩略图打开原图灯箱 Dialog 展示元信息与提示词原文
     const user = userEvent.setup()
-    const viewThumbnails = screen.getAllByTitle("查看原图")
+    const viewThumbnails = screen.getAllByRole("button", { name: "查看原图" })
     const meta101 = formatHistoryMeta(mockHistoryItems[0], i18n.t)
 
     await user.hover(viewThumbnails[0])
@@ -879,7 +879,9 @@ describe("卡通风格生图页（并入 #14 历史区）", () => {
 
     renderPage()
 
-    const viewThumbnails = await screen.findAllByTitle("查看原图")
+    const viewThumbnails = await screen.findAllByRole("button", {
+      name: "查看原图"
+    })
     const meta = formatHistoryMeta(customItems[0], i18n.t)
     expect(meta).toContain("special-custom-model")
     expect(meta).toContain("45秒")

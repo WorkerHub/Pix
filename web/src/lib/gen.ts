@@ -256,7 +256,7 @@ export function formatHistoryDuration(
     seconds === null ||
     seconds === undefined ||
     typeof seconds !== "number" ||
-    Number.isNaN(seconds) ||
+    !Number.isFinite(seconds) ||
     seconds < 0
   ) {
     return null

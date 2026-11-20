@@ -303,6 +303,8 @@ describe("gen helpers", () => {
         expect(formatHistoryDuration(undefined, i18n.t)).toBeNull()
         expect(formatHistoryDuration(-1, i18n.t)).toBeNull()
         expect(formatHistoryDuration(NaN, i18n.t)).toBeNull()
+        expect(formatHistoryDuration(Infinity, i18n.t)).toBeNull()
+        expect(formatHistoryDuration(-Infinity, i18n.t)).toBeNull()
       })
 
       it("不足 1 分钟补零显示 XX秒", () => {
