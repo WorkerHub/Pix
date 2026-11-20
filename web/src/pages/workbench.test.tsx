@@ -434,7 +434,7 @@ describe("卡通风格生图页（并入 #14 历史区）", () => {
     // 出图后存储已被清除
     expect(localStorage.getItem(GEN_JOB_STORAGE_KEY)).toBeNull()
 
-    // 卸载并模拟用户「关闭页面后再次进入 Pix」
+    // 卸载并模拟用户「关闭页面后再次进入生图页」
     unmount()
     vi.useRealTimers()
 
