@@ -57,6 +57,7 @@ export function WorkbenchPage() {
   // 历史追踪轮询计时器与序列号
   const historyPollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const historyPollSeqRef = useRef<number>(0)
+  const loadHistorySeqRef = useRef<number>(0)
 
   const stopHistoryPolling = useCallback(() => {
     if (historyPollTimerRef.current !== null) {
@@ -77,19 +78,24 @@ export function WorkbenchPage() {
     async (pageToLoad = 1) => {
       setHistoryLoading(true)
       setHistoryError("")
+      const seq = ++loadHistorySeqRef.current
       try {
         const res = await genApi.history(pageToLoad, 12)
+        if (loadHistorySeqRef.current !== seq) return
         setHistoryPage(res.page)
         setHistoryTotalPages(Math.max(1, Math.ceil(res.total / res.pageSize)))
         if (pageToLoad === 1) {
-          setHistoryItems(mergeHistoryItems(res.items, []))
+          setHistoryItems((prev) => mergeHistoryItems(res.items, prev))
         } else {
           setHistoryItems((prev) => appendHistoryItems(prev, res.items))
         }
       } catch (err) {
+        if (loadHistorySeqRef.current !== seq) return
         setHistoryError(describeApiError(t, err) || t("common.loading"))
       } finally {
-        setHistoryLoading(false)
+        if (loadHistorySeqRef.current === seq) {
+          setHistoryLoading(false)
+        }
       }
     },
     [t]
@@ -102,6 +108,8 @@ export function WorkbenchPage() {
   const refreshHistory = useCallback(
     (targetJobId?: string) => {
       stopHistoryPolling()
+      // 使在途未完成的 loadHistory（如挂载时发起的初次拉取）失效，避免晚到覆盖
+      loadHistorySeqRef.current += 1
       const seq = historyPollSeqRef.current
 
       let attempt = 0

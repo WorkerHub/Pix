@@ -161,10 +161,13 @@ describe("gen helpers", () => {
   })
 
   describe("HISTORY_POLL_DELAYS", () => {
-    it("定义了 5 次有界退避间隔，总窗口 7.5 秒", () => {
-      expect(HISTORY_POLL_DELAYS).toEqual([500, 1000, 1500, 2000, 2500])
+    it("定义了 11 次有界退避间隔，总窗口 25.5 秒（≥20s），覆盖最坏落库时延", () => {
+      expect(HISTORY_POLL_DELAYS).toEqual([
+        500, 1000, 1500, 2000, 2500, 3000, 3000, 3000, 3000, 3000, 3000
+      ])
       const total = HISTORY_POLL_DELAYS.reduce((a, b) => a + b, 0)
-      expect(total).toBe(7500)
+      expect(total).toBe(25500)
+      expect(total).toBeGreaterThanOrEqual(20000)
     })
   })
 
