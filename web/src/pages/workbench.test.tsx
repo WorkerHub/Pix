@@ -940,6 +940,32 @@ describe("卡通风格生图页（并入 #14 历史区）", () => {
     expect(loadMoreBtn).not.toBeDisabled()
   })
 
+  it("支持切换 9 款模型并提交对应的模型参数", async () => {
+    vi.mocked(genApi.submit).mockResolvedValue({ jobId: "job-model-test" })
+    vi.mocked(genApi.status).mockResolvedValue({ state: "running" })
+
+    renderPage()
+
+    // 切换到卡通模型 toonyou
+    const toonyouModel = screen.getByRole("radio", { name: "卡通" })
+    fireEvent.click(toonyouModel)
+    expect(toonyouModel).toHaveAttribute("data-state", "on")
+
+    const textarea = screen.getByPlaceholderText("提示词")
+    fireEvent.change(textarea, { target: { value: "卡通插画" } })
+
+    const submitBtn = screen.getByRole("button", { name: "生成" })
+    fireEvent.click(submitBtn)
+
+    await waitFor(() => {
+      expect(genApi.submit).toHaveBeenCalledWith({
+        prompt: "卡通插画",
+        size: "portrait",
+        model: "toonyou"
+      })
+    })
+  })
+
   it("支持英文双语展示", async () => {
     await i18n.changeLanguage("en")
     renderPage()

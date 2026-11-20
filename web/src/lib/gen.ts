@@ -3,6 +3,7 @@ import {
   type GenerationHistoryItem,
   type GenerationModel,
   type GenerateSize,
+  getModelMeta,
   MODEL_OPTIONS
 } from "@/lib/api-types"
 
@@ -130,9 +131,34 @@ export function isTimedOut(submittedAt: number, now = Date.now()): boolean {
   return now - submittedAt >= GEN_TIMEOUT_MS
 }
 
-/** 各模型预估生成时长（秒）——写实·极速 100，其余 250。 */
+/** 各模型预估生成时长（秒）——从模型注册表单一数据源派生（写实·极速 100，其余 250）。 */
 export function estimatedGenDurationSec(model?: GenerationModel): number {
-  return model === "realistic-lcm" ? 100 : 250
+  if (!model) return 250
+  return getModelMeta(model).estimatedSec
+}
+
+/**
+ * 格式化模型预估耗时文案（与 estimatedGenDurationSec / 进度条同源派生）
+ * realistic-lcm: 100秒 -> 预计约 100 秒
+ * 其他模型: 250秒 -> 预计约 4 分钟
+ */
+export function formatEstimatedDuration(
+  estimatedSec: number,
+  t: TFunction
+): string {
+  if (estimatedSec <= 100) {
+    return t("generate.estimatedTimeSeconds", { seconds: estimatedSec })
+  }
+  const minutes = Math.round(estimatedSec / 60)
+  return t("generate.estimatedTimeMinutes", { minutes })
+}
+
+/** 获取指定模型的预估耗时文案 */
+export function modelEstimatedDurationText(
+  model: GenerationModel | undefined,
+  t: TFunction
+): string {
+  return formatEstimatedDuration(estimatedGenDurationSec(model), t)
 }
 
 /** 进度封顶（真图到达前最多 95%）。 */
