@@ -12,7 +12,10 @@
  * 8. 机器代理密钥请求头传递。
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
-import { MACHINE_AUTH_HEADER } from "../src/config/project"
+import {
+  MACHINE_AUTH_HEADER,
+  MACHINE_ELAPSED_HEADER
+} from "../src/config/project"
 import { findGenerationByJobId } from "../src/db/queries/generations"
 import {
   ALLOWED_MODELS,
@@ -1113,7 +1116,7 @@ describe("GET /api/gen/image/:jobId 取图流式透传与无公共缓存", () =>
     expect(res2.status).toBe(200)
   })
 
-  it("完成时：读取 X-Pix-Elapsed-Seconds 响应头并写入 D1 duration_seconds", async () => {
+  it("完成时：读取机器耗时响应头并写入 D1 duration_seconds", async () => {
     const r2 = ctx.env.IMAGES as unknown as MockR2Bucket
     const prefix = activePrefix(ctx.env)
     const session = await seedSession(ctx.db, prefix, {
@@ -1138,7 +1141,7 @@ describe("GET /api/gen/image/:jobId 取图流式透传与无公共缓存", () =>
           status: 200,
           headers: {
             "Content-Type": "image/png",
-            "X-Pix-Elapsed-Seconds": "42"
+            [MACHINE_ELAPSED_HEADER]: "42"
           }
         })
     )
@@ -1157,7 +1160,7 @@ describe("GET /api/gen/image/:jobId 取图流式透传与无公共缓存", () =>
     expect(record?.duration_seconds).toBe(42)
   })
 
-  it("响应头 X-Pix-Elapsed-Seconds 缺失或非法时：duration_seconds 写入 null 且不阻断出图", async () => {
+  it("机器耗时响应头缺失或非法时：duration_seconds 写入 null 且不阻断出图", async () => {
     const r2 = ctx.env.IMAGES as unknown as MockR2Bucket
     const prefix = activePrefix(ctx.env)
     const session = await seedSession(ctx.db, prefix, {
@@ -1181,7 +1184,7 @@ describe("GET /api/gen/image/:jobId 取图流式透传与无公共缓存", () =>
           status: 200,
           headers: {
             "Content-Type": "image/png",
-            "X-Pix-Elapsed-Seconds": "not-a-number"
+            [MACHINE_ELAPSED_HEADER]: "not-a-number"
           }
         })
     )
