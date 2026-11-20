@@ -25,7 +25,6 @@ import type {
   LoginResult,
   Me,
   MeUpdateInput,
-  MigrationResult,
   PasskeySummary,
   PublicInfo,
   RegisterResult,
@@ -273,10 +272,6 @@ export const meApi = {
 
 /* 系统管理 */
 
-export interface AdminSetupResult extends SetupResult {
-  migrations: MigrationResult[]
-}
-
 export const adminApi = {
   settings: () => request<AdminSettings>("/admin/settings"),
 
@@ -329,9 +324,7 @@ export const adminApi = {
   deleteUser: (id: number) =>
     request<AdminUserActionResult>(`/admin/users/${id}/delete`, {
       method: "POST"
-    }),
-
-  runSetup: () => request<AdminSetupResult>("/admin/setup", { method: "POST" })
+    })
 }
 
 /* 生图相关（规格 §5，单页生图契约） */

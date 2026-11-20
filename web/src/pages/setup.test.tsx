@@ -1,4 +1,4 @@
-import { act, render, screen, waitFor } from "@testing-library/react"
+import { render, screen } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { MemoryRouter } from "react-router"
 import { beforeEach, describe, expect, it, vi } from "vitest"
@@ -73,32 +73,19 @@ describe("初始化页三形态（规格 §5.3）", () => {
 
     expect(screen.getByText("初始化页面已关闭")).toBeInTheDocument()
     expect(document.getElementById("setup-secret")).toBeNull()
+    expect(document.getElementById("setup-upgrade")).toBeNull()
   })
 
-  it("已初始化 + 页面开启：升级形态，换形态时 DOM 节点不复用", async () => {
-    useSetupStore.setState({ state: setupState(), loaded: true })
+  it("已初始化 + 页面开启：无表单、无升级表单", () => {
+    useSetupStore.setState({
+      state: setupState({ ownerExists: true, enabled: true }),
+      loaded: true
+    })
     renderSetup()
 
-    const initForm = document.getElementById("setup-init")
-    const initSecret = screen.getByLabelText("部署密钥")
-    expect(initForm).not.toBeNull()
-
-    act(() => {
-      useSetupStore.setState({
-        state: setupState({ ownerExists: true, enabled: true }),
-        loaded: true
-      })
-    })
-
-    await waitFor(() =>
-      expect(document.getElementById("setup-upgrade")).not.toBeNull()
-    )
-    const upgradeForm = document.getElementById("setup-upgrade")
-    const upgradeSecret = screen.getByLabelText("部署密钥")
-    expect(upgradeForm).not.toBe(initForm)
-    expect(upgradeSecret).not.toBe(initSecret)
-    expect(initForm?.isConnected).toBe(false)
-    expect(initSecret.isConnected).toBe(false)
+    expect(screen.queryByText("初始化页面已关闭")).not.toBeInTheDocument()
+    expect(document.getElementById("setup-secret")).toBeNull()
+    expect(document.getElementById("setup-upgrade")).toBeNull()
   })
 
   it("密钥错误时清空输入并给出可翻译提示", async () => {
