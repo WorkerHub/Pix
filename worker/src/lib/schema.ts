@@ -187,6 +187,12 @@ export function generationsStatements(prefix: string): string[] {
   return statements
 }
 
+/** 业务表 generations schema_v3 增量迁移语句序列（新增 duration_seconds 可空列）。 */
+export function generationsDurationStatements(prefix: string): string[] {
+  const table = tableName(prefix, "generations")
+  return [`ALTER TABLE ${table} ADD COLUMN duration_seconds INTEGER`]
+}
+
 /** 基线迁移的完整语句序列（表 + 索引），交给执行器逐条执行。 */
 export function baselineStatements(prefix: string): string[] {
   const statements = SCHEMA_TABLES.map((table) =>

@@ -118,6 +118,23 @@ export function isValidModel(model: unknown): model is GenerationModel {
 }
 
 /**
+ * 解析响应头 X-Pix-Elapsed-Seconds 为整数秒。
+ * 头缺失、空串、非合法数字、负数统一返回 null；合法非负数取整（四舍五入）为整数秒。
+ */
+export function parseElapsedSeconds(
+  raw: string | null | undefined
+): number | null {
+  if (raw === null || raw === undefined) return null
+  const trimmed = raw.trim()
+  if (trimmed === "") return null
+  const parsed = Number(trimmed)
+  if (!Number.isFinite(parsed) || parsed < 0) {
+    return null
+  }
+  return Math.round(parsed)
+}
+
+/**
  * 解析生图默认模型：
  * 优先读取运行期环境变量（env.DEFAULT_MODEL，经 trim 去除多余空白）；
  * 若配置值存在且在 ALLOWED_MODELS 允许名单中，则采用该配置值；
@@ -446,6 +463,8 @@ genRoutes.get("/image/:jobId", async (c) => {
 
     if (res.status === 200) {
       const imageBytes = await res.arrayBuffer()
+      const rawElapsed = res.headers.get("X-Pix-Elapsed-Seconds")
+      const durationSeconds = parseElapsedSeconds(rawElapsed)
 
       const persistPromise = (async () => {
         try {
@@ -508,6 +527,7 @@ genRoutes.get("/image/:jobId", async (c) => {
             promptEffective,
             size,
             r2Key,
+            durationSeconds,
             createdAt
           })
 
@@ -581,6 +601,7 @@ genRoutes.get("/history", async (c) => {
       prompt_original: r.prompt_original,
       prompt_effective: r.prompt_effective,
       size: r.size,
+      duration_seconds: r.duration_seconds ?? null,
       created_at: r.created_at,
       imageUrl: `/api/gen/history/${r.id}/image`
     })),

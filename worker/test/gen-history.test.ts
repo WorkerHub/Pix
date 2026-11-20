@@ -100,6 +100,7 @@ describe("生图历史接口（GET /api/gen/history, GET /image, DELETE）", () 
           job_id: string
           model: string
           prompt_original: string
+          duration_seconds: number | null
           imageUrl: string
         }>
         total: number
@@ -108,10 +109,12 @@ describe("生图历史接口（GET /api/gen/history, GET /image, DELETE）", () 
       expect(dataA.items).toHaveLength(2)
       expect(dataA.items[0].job_id).toBe("job-a-2") // 倒序
       expect(dataA.items[0].model).toBe("realistic-lcm")
+      expect(dataA.items[0].duration_seconds).toBeNull()
       expect(dataA.items[0].imageUrl).toBe(
         `/api/gen/history/${dataA.items[0].id}/image`
       )
       expect(dataA.items[1].job_id).toBe("job-a-1")
+      expect(dataA.items[1].duration_seconds).toBeNull()
 
       const resB = await request(ctx.env, "/api/gen/history", {
         headers: { Cookie: userB.cookie }
@@ -193,6 +196,53 @@ describe("生图历史接口（GET /api/gen/history, GET /image, DELETE）", () 
       }
       expect(dataInvalid.page).toBe(1)
       expect(dataInvalid.pageSize).toBe(12)
+    })
+
+    it("返回 duration_seconds 耗时字段，有耗时返回整数秒，老记录或无耗时为空 null", async () => {
+      // 插入一条带耗时的记录
+      await insertGeneration(ctx.env.DB, prefix, {
+        userId: userA.userId,
+        jobId: "job-with-duration",
+        promptOriginal: "带耗时生图",
+        promptEffective: "prompt with duration",
+        size: "square",
+        r2Key: `${userA.userId}/job-with-duration.png`,
+        durationSeconds: 25,
+        createdAt: "2026-11-20T11:00:00.000Z"
+      })
+
+      // 插入一条无耗时的老记录
+      await insertGeneration(ctx.env.DB, prefix, {
+        userId: userA.userId,
+        jobId: "job-without-duration",
+        promptOriginal: "无耗时老记录",
+        promptEffective: "prompt without duration",
+        size: "portrait",
+        r2Key: `${userA.userId}/job-without-duration.png`,
+        durationSeconds: null,
+        createdAt: "2026-11-20T10:00:00.000Z"
+      })
+
+      const res = await request(ctx.env, "/api/gen/history", {
+        headers: { Cookie: userA.cookie }
+      })
+      expect(res.status).toBe(200)
+      const data = (await res.json()) as {
+        items: Array<{
+          job_id: string
+          duration_seconds: number | null
+        }>
+      }
+
+      const itemWith = data.items.find((i) => i.job_id === "job-with-duration")
+      expect(itemWith).toBeDefined()
+      expect(itemWith?.duration_seconds).toBe(25)
+
+      const itemWithout = data.items.find(
+        (i) => i.job_id === "job-without-duration"
+      )
+      expect(itemWithout).toBeDefined()
+      expect(itemWithout?.duration_seconds).toBeNull()
     })
   })
 

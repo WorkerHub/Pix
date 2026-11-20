@@ -21,6 +21,7 @@ import {
   cleanupOrphanPending,
   extractMachineToken,
   machineHeaders,
+  parseElapsedSeconds,
   resolveDefaultModel
 } from "../src/routes/gen"
 import {
@@ -1112,6 +1113,93 @@ describe("GET /api/gen/image/:jobId 取图流式透传与无公共缓存", () =>
     expect(res2.status).toBe(200)
   })
 
+  it("完成时：读取 X-Pix-Elapsed-Seconds 响应头并写入 D1 duration_seconds", async () => {
+    const r2 = ctx.env.IMAGES as unknown as MockR2Bucket
+    const prefix = activePrefix(ctx.env)
+    const session = await seedSession(ctx.db, prefix, {
+      email: "duration-user@example.test"
+    })
+
+    await r2.put(
+      "_pending/job-duration-1.json",
+      JSON.stringify({
+        userId: session.userId,
+        promptOriginal: "耗时测试",
+        promptEffective: "duration test",
+        size: "square",
+        createdAt: "2026-11-20T10:00:00.000Z"
+      })
+    )
+
+    const fakeImageData = new Uint8Array([137, 80, 78, 71, 10, 20])
+    vi.spyOn(globalThis, "fetch").mockImplementation(
+      async () =>
+        new Response(fakeImageData, {
+          status: 200,
+          headers: {
+            "Content-Type": "image/png",
+            "X-Pix-Elapsed-Seconds": "42"
+          }
+        })
+    )
+
+    const res = await request(ctx.env, "/api/gen/image/job-duration-1", {
+      headers: { Cookie: session.cookie }
+    })
+    expect(res.status).toBe(200)
+
+    const record = await findGenerationByJobId(
+      ctx.env.DB,
+      prefix,
+      "job-duration-1"
+    )
+    expect(record).not.toBeNull()
+    expect(record?.duration_seconds).toBe(42)
+  })
+
+  it("响应头 X-Pix-Elapsed-Seconds 缺失或非法时：duration_seconds 写入 null 且不阻断出图", async () => {
+    const r2 = ctx.env.IMAGES as unknown as MockR2Bucket
+    const prefix = activePrefix(ctx.env)
+    const session = await seedSession(ctx.db, prefix, {
+      email: "invalid-duration@example.test"
+    })
+
+    await r2.put(
+      "_pending/job-duration-bad.json",
+      JSON.stringify({
+        userId: session.userId,
+        promptOriginal: "非法头测试",
+        promptEffective: "bad header test",
+        size: "portrait"
+      })
+    )
+
+    const fakeImageData = new Uint8Array([137, 80, 78, 71, 30, 40])
+    vi.spyOn(globalThis, "fetch").mockImplementation(
+      async () =>
+        new Response(fakeImageData, {
+          status: 200,
+          headers: {
+            "Content-Type": "image/png",
+            "X-Pix-Elapsed-Seconds": "not-a-number"
+          }
+        })
+    )
+
+    const res = await request(ctx.env, "/api/gen/image/job-duration-bad", {
+      headers: { Cookie: session.cookie }
+    })
+    expect(res.status).toBe(200)
+
+    const record = await findGenerationByJobId(
+      ctx.env.DB,
+      prefix,
+      "job-duration-bad"
+    )
+    expect(record).not.toBeNull()
+    expect(record?.duration_seconds).toBeNull()
+  })
+
   it("pending 元数据缺失时不记历史：照常回图，不落 R2 / D1 空记录", async () => {
     const r2 = ctx.env.IMAGES as unknown as MockR2Bucket
     const prefix = activePrefix(ctx.env)
@@ -1410,5 +1498,36 @@ describe("POST /api/gen 提交生图顺手扫删 _pending 孤儿", () => {
     expect(warnSpy).toHaveBeenCalled()
 
     warnSpy.mockRestore()
+  })
+})
+
+describe("parseElapsedSeconds", () => {
+  it("解析合法正整数与 0", () => {
+    expect(parseElapsedSeconds("0")).toBe(0)
+    expect(parseElapsedSeconds("42")).toBe(42)
+    expect(parseElapsedSeconds("  15  ")).toBe(15)
+  })
+
+  it("浮点数四舍五入为非负整数", () => {
+    expect(parseElapsedSeconds("12.4")).toBe(12)
+    expect(parseElapsedSeconds("12.6")).toBe(13)
+    expect(parseElapsedSeconds("0.4")).toBe(0)
+  })
+
+  it("缺失、空串或仅空白返回 null", () => {
+    expect(parseElapsedSeconds(null)).toBeNull()
+    expect(parseElapsedSeconds(undefined)).toBeNull()
+    expect(parseElapsedSeconds("")).toBeNull()
+    expect(parseElapsedSeconds("   ")).toBeNull()
+  })
+
+  it("非数字、负数或特殊值返回 null", () => {
+    expect(parseElapsedSeconds("abc")).toBeNull()
+    expect(parseElapsedSeconds("42s")).toBeNull()
+    expect(parseElapsedSeconds("-1")).toBeNull()
+    expect(parseElapsedSeconds("-0.5")).toBeNull()
+    expect(parseElapsedSeconds("Infinity")).toBeNull()
+    expect(parseElapsedSeconds("-Infinity")).toBeNull()
+    expect(parseElapsedSeconds("NaN")).toBeNull()
   })
 })
