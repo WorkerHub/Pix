@@ -223,7 +223,7 @@ export function appendHistoryItems(
 /** 历史条目生成时间格式化为 MM-DD HH:mm（按浏览器本地时区）。 */
 export function formatHistoryDate(createdAt: string | number | Date): string {
   const d = new Date(createdAt)
-  if (isNaN(d.getTime())) return ""
+  if (Number.isNaN(d.getTime())) return ""
   const m = String(d.getMonth() + 1).padStart(2, "0")
   const day = String(d.getDate()).padStart(2, "0")
   const h = String(d.getHours()).padStart(2, "0")
@@ -256,7 +256,7 @@ export function formatHistoryDuration(
     seconds === null ||
     seconds === undefined ||
     typeof seconds !== "number" ||
-    isNaN(seconds) ||
+    Number.isNaN(seconds) ||
     seconds < 0
   ) {
     return null

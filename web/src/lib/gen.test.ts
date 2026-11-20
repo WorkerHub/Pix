@@ -279,7 +279,9 @@ describe("gen helpers", () => {
 
     describe("formatModelDisplayName", () => {
       it("已知模型查 i18n 映射", () => {
-        expect(formatModelDisplayName("realistic-lcm", i18n.t)).toBe("写实·极速")
+        expect(formatModelDisplayName("realistic-lcm", i18n.t)).toBe(
+          "写实·极速"
+        )
         expect(formatModelDisplayName("counterfeit", i18n.t)).toBe("动漫")
       })
 
@@ -367,7 +369,9 @@ describe("gen helpers", () => {
           },
           i18n.t
         )
-        expect(meta).toBe(`#103 · ${expectedDate} · custom-special-model · 45秒`)
+        expect(meta).toBe(
+          `#103 · ${expectedDate} · custom-special-model · 45秒`
+        )
       })
     })
   })
