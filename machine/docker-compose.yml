@@ -25,7 +25,7 @@ services:
       - LORA_DOWNLOAD_URL=${LORA_DOWNLOAD_URL:-https://huggingface.co/latent-consistency/lcm-lora-sdv1-5/resolve/main/pytorch_lora_weights.safetensors}
       - LORA_SHA256=${LORA_SHA256:-8f90d840e075ff588a58e22c6586e2ae9a6f7922996ee6649a7f01072333afe4}
       - MERGED_MODEL_NAME=${MERGED_MODEL_NAME:-Realistic_Vision_V6.0_B1_LCM.safetensors}
-      - DEFAULT_MODEL_ID=${DEFAULT_MODEL_ID:-realistic}
+      - DEFAULT_MODEL_ID=${DEFAULT_MODEL_ID:-realistic-lcm}
       - MAJICMIX_MODEL_NAME=${MAJICMIX_MODEL_NAME:-majicmixRealistic_v7.safetensors}
       - MAJICMIX_DOWNLOAD_URL=${MAJICMIX_DOWNLOAD_URL:-https://huggingface.co/digiplay/majicMIX_realistic_v7/resolve/main/majicmixRealistic_v7.safetensors}
       - MAJICMIX_SHA256=${MAJICMIX_SHA256:-7c819b6d13663ed720c2254f4fe18373107dfef2448d337913c8fc545640881e}
