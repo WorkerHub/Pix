@@ -768,13 +768,13 @@ describe("卡通风格生图页（并入 #14 历史区）", () => {
       expect(screen.getByRole("button", { name: "生成中" })).toBeInTheDocument()
     })
 
-    // 切换 genApi.history 为立即返回已落库记录的 mock，供 refreshHistory 使用
+    // 切换 genApi.history 为立即返回已落库记录的 mock，供 refreshHistory 使用（设 total: 20 以验证多页状态）
     vi.mocked(genApi.history).mockResolvedValue({
       items: [itemDone],
-      total: 1,
+      total: 20,
       page: 1,
       pageSize: 12,
-      totalPages: 1
+      totalPages: 2
     })
 
     // 推进 5 秒，checkJobStatus 完成，触发 refreshHistory
@@ -801,6 +801,12 @@ describe("卡通风格生图页（并入 #14 历史区）", () => {
     // 验证新图 #501 依然存在，未被慢返回的旧 loadHistory(1) 覆盖冲掉
     expect(screen.getByText("#501")).toBeInTheDocument()
     expect(screen.getByTitle("并发新图")).toBeInTheDocument()
+
+    // 验证 historyLoading 已在 refreshHistory 时正确复位：顶部未残留「加载中」，且「加载更多」按钮正常可用（未被 disabled）
+    expect(screen.queryByText("加载中")).not.toBeInTheDocument()
+    const loadMoreBtn = screen.getByRole("button", { name: "加载更多" })
+    expect(loadMoreBtn).toBeInTheDocument()
+    expect(loadMoreBtn).not.toBeDisabled()
   })
 
   it("支持英文双语展示", async () => {

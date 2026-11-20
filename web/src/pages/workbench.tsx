@@ -110,6 +110,7 @@ export function WorkbenchPage() {
       stopHistoryPolling()
       // 使在途未完成的 loadHistory（如挂载时发起的初次拉取）失效，避免晚到覆盖
       loadHistorySeqRef.current += 1
+      setHistoryLoading(false)
       const seq = historyPollSeqRef.current
 
       let attempt = 0
