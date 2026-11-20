@@ -4,7 +4,7 @@ import { Canvas } from "@/components/workbench/canvas"
 import { ControlPanel } from "@/components/workbench/control-panel"
 import { HistoryStrip } from "@/components/workbench/history-strip"
 import "@/components/workbench/workbench.css"
-import { ApiError, genApi } from "@/lib/api"
+import { ApiError, genApi, genImageUrl } from "@/lib/api"
 import { describeApiError } from "@/lib/api-errors"
 import {
   DEFAULT_MODEL,
@@ -13,10 +13,13 @@ import {
   type GenerateSize
 } from "@/lib/api-types"
 import {
+  appendHistoryItems,
   clearStoredJob,
   elapsedSeconds,
   GEN_POLL_INTERVAL_MS,
+  HISTORY_POLL_DELAYS,
   isTimedOut,
+  mergeHistoryItems,
   readStoredJob,
   writeStoredJob,
   type GenPhase
@@ -51,6 +54,24 @@ export function WorkbenchPage() {
   const submittedAtRef = useRef(submittedAt)
   submittedAtRef.current = submittedAt
 
+  // 历史追踪轮询计时器与序列号
+  const historyPollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const historyPollSeqRef = useRef<number>(0)
+
+  const stopHistoryPolling = useCallback(() => {
+    if (historyPollTimerRef.current !== null) {
+      clearTimeout(historyPollTimerRef.current)
+      historyPollTimerRef.current = null
+    }
+    historyPollSeqRef.current += 1
+  }, [])
+
+  useEffect(() => {
+    return () => {
+      stopHistoryPolling()
+    }
+  }, [stopHistoryPolling])
+
   /** 加载历史列表 */
   const loadHistory = useCallback(
     async (pageToLoad = 1) => {
@@ -61,13 +82,9 @@ export function WorkbenchPage() {
         setHistoryPage(res.page)
         setHistoryTotalPages(Math.max(1, Math.ceil(res.total / res.pageSize)))
         if (pageToLoad === 1) {
-          setHistoryItems(res.items)
+          setHistoryItems(mergeHistoryItems(res.items, []))
         } else {
-          setHistoryItems((prev) => {
-            const existingIds = new Set(prev.map((it) => it.id))
-            const newItems = res.items.filter((it) => !existingIds.has(it.id))
-            return [...prev, ...newItems]
-          })
+          setHistoryItems((prev) => appendHistoryItems(prev, res.items))
         }
       } catch (err) {
         setHistoryError(describeApiError(t, err) || t("common.loading"))
@@ -78,20 +95,62 @@ export function WorkbenchPage() {
     [t]
   )
 
-  /** 出图成功时刷新历史条目（取第 1 页并按 ID 去重合并至头部） */
-  const refreshHistory = useCallback(async () => {
-    try {
-      const res = await genApi.history(1, 12)
-      setHistoryTotalPages(Math.max(1, Math.ceil(res.total / res.pageSize)))
-      setHistoryItems((prev) => {
-        const incomingMap = new Map(res.items.map((it) => [it.id, it]))
-        const rest = prev.filter((it) => !incomingMap.has(it.id))
-        return [...res.items, ...rest]
-      })
-    } catch {
-      // 刷新失败不阻塞
-    }
-  }, [])
+  /**
+   * 刷新历史条目（取第 1 页并按 jobId / id 去重合并至头部）。
+   * 若传入 targetJobId，则在目标记录未落库时使用有界退避策略轮询，直至新图入库或达到重试上限。
+   */
+  const refreshHistory = useCallback(
+    (targetJobId?: string) => {
+      stopHistoryPolling()
+      const seq = historyPollSeqRef.current
+
+      let attempt = 0
+
+      const poll = async () => {
+        if (historyPollSeqRef.current !== seq) return
+
+        try {
+          const res = await genApi.history(1, 12)
+          if (historyPollSeqRef.current !== seq) return
+
+          setHistoryTotalPages(Math.max(1, Math.ceil(res.total / res.pageSize)))
+          setHistoryItems((prev) => mergeHistoryItems(res.items, prev))
+
+          // 未指定目标 jobId，单次刷新即完成
+          if (!targetJobId) {
+            return
+          }
+
+          // 检查目标 jobId 是否已在返回列表里
+          const found = res.items.some((it) => it.job_id === targetJobId)
+          if (found) {
+            return
+          }
+
+          // 未命中且仍有重试次数：按退避延迟等待下一次重试
+          if (attempt < HISTORY_POLL_DELAYS.length) {
+            const delay = HISTORY_POLL_DELAYS[attempt]
+            attempt += 1
+            historyPollTimerRef.current = setTimeout(() => {
+              void poll()
+            }, delay)
+          }
+        } catch {
+          // 网络或服务端临时异常：若有剩余重试次数则按退避继续，不中断流程
+          if (targetJobId && attempt < HISTORY_POLL_DELAYS.length) {
+            const delay = HISTORY_POLL_DELAYS[attempt]
+            attempt += 1
+            historyPollTimerRef.current = setTimeout(() => {
+              void poll()
+            }, delay)
+          }
+        }
+      }
+
+      void poll()
+    },
+    [stopHistoryPolling]
+  )
 
   /** 删除单条历史 */
   const handleDeleteHistory = useCallback(
@@ -168,8 +227,12 @@ export function WorkbenchPage() {
       try {
         const res = await genApi.status(currentJobId)
         if (res.state === "done") {
+          if (typeof Image !== "undefined") {
+            const img = new Image()
+            img.src = genImageUrl(currentJobId)
+          }
           setPhase("done")
-          void refreshHistory()
+          refreshHistory(currentJobId)
           return
         }
         if (res.state === "error") {
@@ -290,6 +353,7 @@ export function WorkbenchPage() {
 
     setPhase("submitting")
     setErrorMessage(null)
+    stopHistoryPolling()
 
     try {
       const res = await genApi.submit({ prompt: trimmed, size, model })
@@ -368,8 +432,12 @@ export function WorkbenchPage() {
     try {
       const res = await genApi.status(jobId)
       if (res.state === "done") {
+        if (typeof Image !== "undefined") {
+          const img = new Image()
+          img.src = genImageUrl(jobId)
+        }
         setPhase("done")
-        void refreshHistory()
+        refreshHistory(jobId)
         return
       }
       if (res.state === "error") {
@@ -398,6 +466,7 @@ export function WorkbenchPage() {
 
   /** 超时态或异常态「重新生成」 */
   const handleRegenerate = () => {
+    stopHistoryPolling()
     clearStoredJob()
     setJobId(null)
     setSubmittedAt(null)

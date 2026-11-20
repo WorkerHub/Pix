@@ -446,6 +446,298 @@ describe("卡通风格生图页（并入 #14 历史区）", () => {
     })
   })
 
+  it("时序竞态处理：出图后首次历史未落库，退避重试拉取到新图后立即进历史并停轮询", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    vi.mocked(genApi.submit).mockResolvedValue({ jobId: "job-race-1" })
+    vi.mocked(genApi.status).mockResolvedValue({ state: "done" })
+
+    // 1st call (mount) returns empty
+    vi.mocked(genApi.history).mockResolvedValueOnce({
+      items: [],
+      total: 0,
+      page: 1,
+      pageSize: 12,
+      totalPages: 0
+    })
+    // 2nd call (attempt 0 immediately on done) returns empty (未落库)
+    vi.mocked(genApi.history).mockResolvedValueOnce({
+      items: [],
+      total: 0,
+      page: 1,
+      pageSize: 12,
+      totalPages: 0
+    })
+    // 3rd call (attempt 1 after 500ms) returns the newly persisted item
+    const newItem: GenerationHistoryItem = {
+      id: 201,
+      job_id: "job-race-1",
+      model: "realistic-lcm",
+      prompt_original: "竞态生图测试",
+      prompt_effective: "race prompt",
+      size: "portrait",
+      created_at: "2026-11-20T10:10:00Z",
+      imageUrl: "/api/gen/history/201/image"
+    }
+    vi.mocked(genApi.history).mockResolvedValueOnce({
+      items: [newItem],
+      total: 1,
+      page: 1,
+      pageSize: 12,
+      totalPages: 1
+    })
+
+    renderPage()
+
+    const textarea = screen.getByPlaceholderText("提示词")
+    fireEvent.change(textarea, { target: { value: "竞态生图测试" } })
+    fireEvent.click(screen.getByRole("button", { name: "生成" }))
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "生成中" })).toBeInTheDocument()
+    })
+
+    // 推进 5 秒，触发 status 轮询判定完成并触发 attempt 0 刷新历史
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(5000)
+    })
+
+    await waitFor(() => {
+      expect(genApi.history).toHaveBeenCalledTimes(2)
+      // 此时尚未落库，不展示 #201
+      expect(screen.queryByText("#201")).not.toBeInTheDocument()
+    })
+
+    // 推进 500ms（第 1 次退避重试）
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(500)
+    })
+
+    await waitFor(() => {
+      expect(genApi.history).toHaveBeenCalledTimes(3)
+      // 目标记录已落库，自动展示在历史区中
+      expect(screen.getByText("#201")).toBeInTheDocument()
+      expect(screen.getByTitle("竞态生图测试")).toBeInTheDocument()
+    })
+
+    // 再推进时间，验证命中目标后已停轮询，不再产生额外请求
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(3000)
+    })
+    expect(genApi.history).toHaveBeenCalledTimes(3)
+  })
+
+  it("时序竞态有界性：若持续未落库，达到 5 次退避上限后停止重试，不发起多余请求", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    vi.mocked(genApi.submit).mockResolvedValue({ jobId: "job-max-retry" })
+    vi.mocked(genApi.status).mockResolvedValue({ state: "done" })
+
+    // 所有 history 调用均返回空（模拟后端一直未写库）
+    vi.mocked(genApi.history).mockResolvedValue({
+      items: [],
+      total: 0,
+      page: 1,
+      pageSize: 12,
+      totalPages: 0
+    })
+
+    renderPage()
+
+    const textarea = screen.getByPlaceholderText("提示词")
+    fireEvent.change(textarea, { target: { value: "上限测试" } })
+    fireEvent.click(screen.getByRole("button", { name: "生成" }))
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "生成中" })).toBeInTheDocument()
+    })
+
+    // 推进 5 秒：status 完成，attempt 0 触发
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(5000)
+    })
+
+    await waitFor(() => {
+      expect(genApi.history).toHaveBeenCalledTimes(2)
+    })
+
+    // 依次推进 5 次退避间隔：500, 1000, 1500, 2000, 2500 (共 7500ms)
+    // 500ms -> attempt 1 (call 3)
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(500)
+    })
+    expect(genApi.history).toHaveBeenCalledTimes(3)
+
+    // 1000ms -> attempt 2 (call 4)
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1000)
+    })
+    expect(genApi.history).toHaveBeenCalledTimes(4)
+
+    // 1500ms -> attempt 3 (call 5)
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1500)
+    })
+    expect(genApi.history).toHaveBeenCalledTimes(5)
+
+    // 2000ms -> attempt 4 (call 6)
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(2000)
+    })
+    expect(genApi.history).toHaveBeenCalledTimes(6)
+
+    // 2500ms -> attempt 5 (call 7)
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(2500)
+    })
+    expect(genApi.history).toHaveBeenCalledTimes(7)
+
+    // 达到上限后停止：再推 10 秒，请求数保持 7
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(10000)
+    })
+    expect(genApi.history).toHaveBeenCalledTimes(7)
+  })
+
+  it("连续生图：按 jobId 确定性去重合并，多次生图后新老记录均进入历史且无重复", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+
+    const item1: GenerationHistoryItem = {
+      id: 301,
+      job_id: "job-seq-1",
+      model: "realistic-lcm",
+      prompt_original: "第一张图",
+      prompt_effective: "first",
+      size: "portrait",
+      created_at: "2026-11-20T10:00:00Z",
+      imageUrl: "/api/gen/history/301/image"
+    }
+    const item2: GenerationHistoryItem = {
+      id: 302,
+      job_id: "job-seq-2",
+      model: "realistic-lcm",
+      prompt_original: "第二张图",
+      prompt_effective: "second",
+      size: "portrait",
+      created_at: "2026-11-20T10:05:00Z",
+      imageUrl: "/api/gen/history/302/image"
+    }
+
+    // 首次挂载历史空
+    vi.mocked(genApi.history).mockResolvedValueOnce({
+      items: [],
+      total: 0,
+      page: 1,
+      pageSize: 12,
+      totalPages: 0
+    })
+
+    renderPage()
+
+    // 1. 生成第一张图
+    vi.mocked(genApi.submit).mockResolvedValueOnce({ jobId: "job-seq-1" })
+    vi.mocked(genApi.status).mockResolvedValueOnce({ state: "done" })
+    vi.mocked(genApi.history).mockResolvedValueOnce({
+      items: [item1],
+      total: 1,
+      page: 1,
+      pageSize: 12,
+      totalPages: 1
+    })
+
+    const textarea = screen.getByPlaceholderText("提示词")
+    fireEvent.change(textarea, { target: { value: "第一张图" } })
+    fireEvent.click(screen.getByRole("button", { name: "生成" }))
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "生成中" })).toBeInTheDocument()
+    })
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(5000)
+    })
+
+    await waitFor(() => {
+      expect(screen.getByText("#301")).toBeInTheDocument()
+      expect(screen.getByTitle("第一张图")).toBeInTheDocument()
+    })
+
+    // 2. 生成第二张图（返回包含 item2 与 item1，且带一条相同 job_id 重复记录）
+    vi.mocked(genApi.submit).mockResolvedValueOnce({ jobId: "job-seq-2" })
+    vi.mocked(genApi.status).mockResolvedValueOnce({ state: "done" })
+    vi.mocked(genApi.history).mockResolvedValueOnce({
+      items: [item2, { ...item2, id: 999 }, item1],
+      total: 2,
+      page: 1,
+      pageSize: 12,
+      totalPages: 1
+    })
+
+    fireEvent.change(textarea, { target: { value: "第二张图" } })
+    fireEvent.click(screen.getByRole("button", { name: "生成" }))
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "生成中" })).toBeInTheDocument()
+    })
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(5000)
+    })
+
+    await waitFor(() => {
+      expect(screen.getByText("#302")).toBeInTheDocument()
+      expect(screen.getByTitle("第二张图")).toBeInTheDocument()
+      expect(screen.getByText("#301")).toBeInTheDocument()
+      expect(screen.getByTitle("第一张图")).toBeInTheDocument()
+      // #999 因重复 job-seq-2 被去重，不出现
+      expect(screen.queryByText("#999")).not.toBeInTheDocument()
+    })
+  })
+
+  it("发起新生成或重置时立即终止上一次未完的历史轮询", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    vi.mocked(genApi.submit).mockResolvedValue({ jobId: "job-cancel-1" })
+    vi.mocked(genApi.status).mockResolvedValue({ state: "done" })
+
+    // 挂载与首次 done 返回空，触发退避计划
+    vi.mocked(genApi.history).mockResolvedValue({
+      items: [],
+      total: 0,
+      page: 1,
+      pageSize: 12,
+      totalPages: 0
+    })
+
+    renderPage()
+
+    const textarea = screen.getByPlaceholderText("提示词")
+    fireEvent.change(textarea, { target: { value: "取消测试" } })
+    fireEvent.click(screen.getByRole("button", { name: "生成" }))
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "生成中" })).toBeInTheDocument()
+    })
+
+    // 推进 5 秒触发完成与 attempt 0
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(5000)
+    })
+
+    await waitFor(() => {
+      expect(genApi.history).toHaveBeenCalledTimes(2)
+    })
+
+    // 在 500ms 重试触发前，用户再次点击生成新的任务
+    vi.mocked(genApi.submit).mockResolvedValueOnce({ jobId: "job-cancel-2" })
+    fireEvent.change(textarea, { target: { value: "新任务" } })
+    fireEvent.click(screen.getByRole("button", { name: "生成" }))
+
+    // 推进 500ms（原本旧轮询的下一次执行时间），验证不会产生旧任务的轮询调用
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(500)
+    })
+    // 依然只有 2 次（旧轮询已被 stopHistoryPolling 销毁）
+    expect(genApi.history).toHaveBeenCalledTimes(2)
+  })
+
   it("支持英文双语展示", async () => {
     await i18n.changeLanguage("en")
     renderPage()
