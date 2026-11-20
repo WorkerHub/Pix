@@ -220,87 +220,16 @@
     "recheckOnce": "再查一次",
     "regenerate": "重新生成"
   },
-  "arcade": {
-    "marquee": {
-      "title": "游戏厅",
-      "sub1": "BOSS 战版",
-      "sub2": "边玩边等图"
-    },
-    "coin": {
-      "small": "免费游玩 · NO COIN NEEDED"
-    },
-    "idle": {
-      "aria": "待机画面",
-      "title": "说一句话，召唤 Boss！",
-      "desc": "在下方写下提示词开始生成——等待期间 Boss 会现身开战：",
-      "move": "左手摇杆走位",
-      "dodge": "躲开弹幕，",
-      "fire": "右手红按钮开火",
-      "finish": "，把它打爆，图就是你的！",
-      "keyHint": "键盘也能玩：方向键 / WASD 走位 · 空格 / J 键开火"
-    },
-    "battle": {
-      "aria": "Boss 战画面",
-      "canvasAria": "街机 Boss 战斗画布",
-      "hpLabel": "▼ BOSS HP · 生图进度",
-      "elapsed": "ELAPSED · 战斗计时"
-    },
-    "stage": {
-      "summoning": "Boss 正在从像素雾里显形…",
-      "takingShape": "Boss 显形中——小心它的弹幕！",
-      "revealing": "Boss 快完全现身了，别停火！",
-      "finalPhase": "最后一击——把它打爆！",
-      "finishing": "马上就好啦…"
-    },
-    "done": {
-      "aria": "生成完成画面",
-      "time": "用时",
-      "seconds": "秒",
-      "score": "战斗分数",
-      "loot": "战利品已入库",
-      "again": "↻ 再来一局",
-      "download": "↓ 保存这张图"
-    },
-    "deck": {
-      "joyAria": "摇杆：拖动控制主角走位",
-      "joyLabel": "摇 杆 · 走 位",
-      "joyHint1": "按住拖向任意方向",
-      "joyHint2": "主角跟着跑",
-      "promptHead": "输入提示词 · INSERT PROMPT",
-      "sizeLabel": "比例 SIZE",
-      "modelLabel": "模型 MODEL",
-      "modelAria": "模型",
-      "summon": "召唤 BOSS",
-      "attack": "攻击",
-      "attackAria": "攻击按钮",
-      "diceAria": "随机来一句提示词",
-      "diceTitle": "随机提示词",
-      "soundAria": "开关音效",
-      "soundTitle": "音效开关",
-      "caption1": "骰子：随机提示词",
-      "caption2": "喇叭：8-bit 音效",
-      "toast": {
-        "dice": "骰子说：就召唤这个 Boss 吧！",
-        "soundOn": "音效已开启 ♪",
-        "soundOff": "音效已静音",
-        "empty": "先输入一句提示词，再开始生成哦！"
-      }
-    },
-    "gallery": {
-      "aria": "战利品展示柜",
-      "title": "▸ 我的战利品展示柜",
-      "empty": "还没有战利品——打爆一只 Boss，战利品就会陈列在这里。点击任意一张可以回屏幕上重看。"
-    },
-    "preset": {
-      "shiba": "一只戴墨镜的柴犬在海边冲浪",
-      "castle": "漂浮在云朵上的小城堡，彩虹桥",
-      "catAstronaut": "宇航员小猫在月球吃西瓜",
-      "mushroom": "森林里发光的蘑菇小屋和萤火虫",
-      "giraffe": "骑着自行车的长颈鹿穿过向日葵田",
-      "octopus": "海底的章鱼咖啡馆，灯笼鱼照明",
-      "penguin": "雪山顶上喝热可可的企鹅一家",
-      "whale": "会飞的鲸鱼驮着小岛去旅行"
-    }
+  "history": {
+    "title": "生成历史",
+    "empty": "暂无生成历史，在右侧输入提示词开始创作吧",
+    "loadMore": "加载更多",
+    "download": "下载原图",
+    "delete": "删除",
+    "view": "查看原图",
+    "deleteTitle": "删除记录",
+    "deleteConfirm": "确定要删除这条生成记录吗？删除后不可恢复。",
+    "deleteError": "删除失败，请稍后重试"
   },
   "settings": {
     "title": "设置",
