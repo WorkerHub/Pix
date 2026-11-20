@@ -27,6 +27,29 @@ def get_comfy_headers() -> dict[str, str]:
     }
 
 
+def compute_elapsed_seconds(status: dict, created_at: float) -> int:
+    """从 ComfyUI history 的 status.messages 读取 execution_start/execution_success
+    时间戳（毫秒）计算耗时；时间戳缺失或异常时回退为取图时刻减提交时刻（整数秒）。"""
+    start_ts = None
+    success_ts = None
+    for message in status.get("messages", []) or []:
+        if not isinstance(message, (list, tuple)) or len(message) < 2:
+            continue
+        event, data = message[0], message[1]
+        if not isinstance(data, dict):
+            continue
+        ts = data.get("timestamp")
+        if not isinstance(ts, (int, float)):
+            continue
+        if event == "execution_start":
+            start_ts = ts
+        elif event == "execution_success":
+            success_ts = ts
+    if start_ts is not None and success_ts is not None and success_ts >= start_ts:
+        return max(0, int((success_ts - start_ts) / 1000))
+    return max(0, int(time.time() - created_at))
+
+
 async def check_comfy_liveness() -> bool:
     try:
         timeout = httpx.Timeout(connect=2.0, read=2.0, write=2.0, pool=2.0)
@@ -314,7 +337,7 @@ async def get_image(job_id: str):
             resp_headers: dict[str, str] = {}
             if job_id in tracked_jobs and "created_at" in tracked_jobs[job_id]:
                 if "elapsed_seconds" not in tracked_jobs[job_id]:
-                    elapsed = max(0, int(time.time() - tracked_jobs[job_id]["created_at"]))
+                    elapsed = compute_elapsed_seconds(status, tracked_jobs[job_id]["created_at"])
                     tracked_jobs[job_id]["elapsed_seconds"] = elapsed
                 else:
                     elapsed = tracked_jobs[job_id]["elapsed_seconds"]
