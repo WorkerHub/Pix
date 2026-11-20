@@ -312,7 +312,7 @@
       "email": "Email",
       "registration": "Registration & Approval",
       "users": "Users",
-      "maintenance": "Database Maintenance"
+      "others": "Others"
     },
     "email": {
       "title": "Email",
@@ -396,8 +396,8 @@
         "copyFailed": "Copy failed — select the password and copy it manually"
       }
     },
-    "maintenance": {
-      "title": "Database",
+    "others": {
+      "title": "Others",
       "setupPage": "Open the setup page",
       "setupPageHint": "This only gates the page; the endpoint still requires the deployment secret.",
       "tablePrefix": "Effective table prefix"
