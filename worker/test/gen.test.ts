@@ -18,6 +18,7 @@ import {
   ALLOWED_MODELS,
   DEFAULT_MODEL,
   buildMachineUrl,
+  cleanupOrphanPending,
   extractMachineToken,
   machineHeaders,
   resolveDefaultModel
@@ -30,7 +31,7 @@ import {
   type TestContext
 } from "./support/app"
 import { MockAi } from "./support/mock-ai"
-import type { MockR2Bucket } from "./support/mock-r2"
+import { MockR2Bucket } from "./support/mock-r2"
 
 const MOCK_SERVER_URL =
   "https://mock-machine.test:8190/base?_token=instabox_secret"
@@ -1228,5 +1229,186 @@ describe("GET /api/gen/image/:jobId 取图流式透传与无公共缓存", () =>
     expect(res.headers.get("content-type")).toBe("image/png")
     const bytes = new Uint8Array(await res.arrayBuffer())
     expect(bytes).toEqual(fakeImageData)
+  })
+})
+
+describe("cleanupOrphanPending 单元测试", () => {
+  it("桶为 null 或 undefined 时直接返回 0", async () => {
+    expect(await cleanupOrphanPending(null)).toBe(0)
+    expect(await cleanupOrphanPending(undefined)).toBe(0)
+  })
+
+  it("超过 1 小时的 _pending/*.json 被删除，1 小时内的保留，非 _pending 对象不受影响", async () => {
+    const r2 = new MockR2Bucket() as unknown as R2Bucket
+    const mockR2 = r2 as unknown as MockR2Bucket
+    const now = new Date("2026-11-20T12:00:00.000Z")
+    const nowMs = now.getTime()
+
+    // 1. 超时 1 小时 1 秒 (3601 秒前) -> 应当删除
+    mockR2.seedObject(
+      "_pending/job-old.json",
+      JSON.stringify({ prompt: "old" }),
+      new Date(nowMs - 3601 * 1000)
+    )
+
+    // 2. 超时 2 小时 -> 应当删除
+    mockR2.seedObject(
+      "_pending/job-very-old.json",
+      JSON.stringify({ prompt: "very old" }),
+      new Date(nowMs - 7200 * 1000)
+    )
+
+    // 3. 刚好 1 小时整 (3600 秒前) -> 应当保留（<= 1 小时不动）
+    mockR2.seedObject(
+      "_pending/job-exact-1h.json",
+      JSON.stringify({ prompt: "exact 1h" }),
+      new Date(nowMs - 3600 * 1000)
+    )
+
+    // 4. 10 分钟前 (600 秒前) -> 应当保留
+    mockR2.seedObject(
+      "_pending/job-recent.json",
+      JSON.stringify({ prompt: "recent" }),
+      new Date(nowMs - 600 * 1000)
+    )
+
+    // 5. 非 _pending 前缀的对象，即使 2 小时前 -> 绝不删除
+    mockR2.seedObject(
+      "1/job-formal.png",
+      new Uint8Array([1, 2, 3]),
+      new Date(nowMs - 7200 * 1000)
+    )
+
+    // 6. _pending/ 下非 .json 结尾的对象，即使 2 小时前 -> 不删除
+    mockR2.seedObject(
+      "_pending/not-json.txt",
+      "some text",
+      new Date(nowMs - 7200 * 1000)
+    )
+
+    const deleted = await cleanupOrphanPending(r2, { now })
+    expect(deleted).toBe(2)
+
+    // 校验保留情况
+    expect(await r2.get("_pending/job-old.json")).toBeNull()
+    expect(await r2.get("_pending/job-very-old.json")).toBeNull()
+    expect(await r2.get("_pending/job-exact-1h.json")).not.toBeNull()
+    expect(await r2.get("_pending/job-recent.json")).not.toBeNull()
+    expect(await r2.get("1/job-formal.png")).not.toBeNull()
+    expect(await r2.get("_pending/not-json.txt")).not.toBeNull()
+  })
+
+  it("当 R2 list 或 delete 抛错时降级为 warn，返回 0 且不抛出未捕获异常", async () => {
+    const r2 = new MockR2Bucket() as unknown as R2Bucket
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {})
+
+    vi.spyOn(r2, "list").mockRejectedValue(new Error("R2 list failed"))
+    const res = await cleanupOrphanPending(r2)
+    expect(res).toBe(0)
+    expect(warnSpy).toHaveBeenCalled()
+
+    warnSpy.mockRestore()
+  })
+})
+
+describe("POST /api/gen 提交生图顺手扫删 _pending 孤儿", () => {
+  let ctx: TestContext
+  let authCookie: string
+
+  beforeEach(async () => {
+    ctx = await initializedContext({
+      PIX_SERVER_URL: MOCK_SERVER_URL,
+      PIX_SERVER_SECRET: MOCK_SERVER_SECRET
+    })
+    const session = await seedSession(ctx.db, activePrefix(ctx.env))
+    authCookie = session.cookie
+  })
+
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  it("验收项：提交生图顺手清掉超过 1 小时的假 pending，1 小时内的不动，正式图和索引不碰，主流程正常", async () => {
+    const r2 = ctx.env.IMAGES as unknown as MockR2Bucket
+    const now = Date.now()
+
+    // 1. 超过 1 小时的假 pending 文件（2 小时前）
+    r2.seedObject(
+      "_pending/job-orphan-expired.json",
+      JSON.stringify({ prompt: "orphan expired" }),
+      new Date(now - 7200 * 1000)
+    )
+
+    // 2. 1 小时内的假 pending 文件（10 分钟前）
+    r2.seedObject(
+      "_pending/job-pending-fresh.json",
+      JSON.stringify({ prompt: "pending fresh" }),
+      new Date(now - 600 * 1000)
+    )
+
+    // 3. 正式图片与 D1 记录
+    r2.seedObject(
+      "1/job-formal-done.png",
+      new Uint8Array([137, 80, 78, 71]),
+      new Date(now - 7200 * 1000)
+    )
+
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(JSON.stringify({ jobId: "job-new-123" }), {
+        status: 202,
+        headers: { "Content-Type": "application/json" }
+      })
+    )
+
+    const res = await request(ctx.env, "/api/gen", {
+      method: "POST",
+      headers: { Cookie: authCookie, "Content-Type": "application/json" },
+      body: JSON.stringify({ prompt: "new prompt", size: "square" })
+    })
+
+    // 生图主流程不回归
+    expect(res.status).toBe(200)
+    const body = (await res.json()) as Record<string, unknown>
+    expect(body.jobId).toBe("job-new-123")
+
+    // 超时假 pending 文件已被清掉
+    expect(await r2.get("_pending/job-orphan-expired.json")).toBeNull()
+
+    // 1 小时内的假 pending 文件完好保留
+    expect(await r2.get("_pending/job-pending-fresh.json")).not.toBeNull()
+
+    // 正式图片完好保留
+    expect(await r2.get("1/job-formal-done.png")).not.toBeNull()
+
+    // 新任务的 pending 暂存正常写入
+    expect(await r2.get("_pending/job-new-123.json")).not.toBeNull()
+  })
+
+  it("当 R2 清理出现异常时，记录 warn 且不阻断生图主流程", async () => {
+    const r2 = ctx.env.IMAGES as unknown as MockR2Bucket
+    vi.spyOn(r2, "list").mockRejectedValue(
+      new Error("R2 temporary unavailable")
+    )
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {})
+
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(JSON.stringify({ jobId: "job-resilient-456" }), {
+        status: 202,
+        headers: { "Content-Type": "application/json" }
+      })
+    )
+
+    const res = await request(ctx.env, "/api/gen", {
+      method: "POST",
+      headers: { Cookie: authCookie, "Content-Type": "application/json" },
+      body: JSON.stringify({ prompt: "resilient prompt", size: "square" })
+    })
+
+    expect(res.status).toBe(200)
+    const body = (await res.json()) as Record<string, unknown>
+    expect(body.jobId).toBe("job-resilient-456")
+    expect(warnSpy).toHaveBeenCalled()
+
+    warnSpy.mockRestore()
   })
 })
