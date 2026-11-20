@@ -230,6 +230,7 @@ export function WorkbenchPage() {
     async (currentJobId: string, timestamp: number) => {
       if (isTimedOut(timestamp)) {
         setPhase("timeout")
+        clearStoredJob()
         return
       }
 
@@ -242,6 +243,7 @@ export function WorkbenchPage() {
           }
           setPhase("done")
           refreshHistory(currentJobId)
+          clearStoredJob()
           return
         }
         if (res.state === "error") {
@@ -278,6 +280,12 @@ export function WorkbenchPage() {
 
     const stored = readStoredJob()
     if (stored) {
+      if (isTimedOut(stored.submittedAt)) {
+        clearStoredJob()
+        void checkHealth()
+        return
+      }
+
       setJobId(stored.jobId)
       setSubmittedAt(stored.submittedAt)
       if (stored.prompt) setPrompt(stored.prompt)
@@ -286,11 +294,6 @@ export function WorkbenchPage() {
         setModel(stored.model)
       }
       setElapsed(elapsedSeconds(stored.submittedAt))
-
-      if (isTimedOut(stored.submittedAt)) {
-        setPhase("timeout")
-        return
-      }
 
       setPhase("generating")
       void checkJobStatus(stored.jobId, stored.submittedAt)
@@ -311,6 +314,7 @@ export function WorkbenchPage() {
 
       if (isTimedOut(submittedAt)) {
         setPhase("timeout")
+        clearStoredJob()
       }
     }, 1000)
 
@@ -426,6 +430,7 @@ export function WorkbenchPage() {
           ) {
             void checkJobStatus(jobIdRef.current, submittedAtRef.current)
           } else {
+            clearStoredJob()
             setPhase("idle")
           }
         }
@@ -447,6 +452,7 @@ export function WorkbenchPage() {
         }
         setPhase("done")
         refreshHistory(jobId)
+        clearStoredJob()
         return
       }
       if (res.state === "error") {
