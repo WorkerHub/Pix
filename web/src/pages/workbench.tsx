@@ -23,7 +23,7 @@ import {
 } from "@/lib/gen"
 
 /**
- * 卡通风格 Pix 生图工作台
+ * 卡通风格生图工作台
  * 桌面 2 列（画布 + 历史条，右控制面板）；移动端紧凑单列，100dvh 一屏完整显示无页面滚动。
  */
 export function WorkbenchPage() {
