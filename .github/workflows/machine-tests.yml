@@ -38,7 +38,7 @@ jobs:
           context: machine
           file: machine/Dockerfile
           load: true
-          tags: pix-service:test
+          tags: machine-test:latest
           cache-from: type=gha,scope=machine-tests
           cache-to: type=gha,mode=max,scope=machine-tests
 
@@ -51,5 +51,5 @@ jobs:
             --entrypoint bash \
             -v "${{ github.workspace }}/machine:/app/machine" \
             -e COMFYUI_DIR=/app/ComfyUI \
-            pix-service:test \
+            machine-test:latest \
             -c "pip install --quiet pytest anyio && python -m pytest machine/tests -q"
