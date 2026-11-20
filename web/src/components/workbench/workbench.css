@@ -119,6 +119,19 @@ button.wb-toggle-item[data-state="on"] {
   color: #ffd23f;
 }
 
+div.wb-model-tooltip[data-slot="tooltip-content"] {
+  background: #26264a;
+  border: 2px solid #26264a;
+  border-radius: 10px;
+  box-shadow: 3px 3px 0 rgba(0, 0, 0, 0.25);
+  color: #ffffff;
+}
+
+div.wb-model-tooltip span {
+  background-color: #26264a;
+  fill: #26264a;
+}
+
 .wb-history-card {
   background: #ffffff;
   border: 2px solid #26264a;

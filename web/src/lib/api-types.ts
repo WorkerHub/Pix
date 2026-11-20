@@ -219,27 +219,99 @@ export type GenerationModel =
   | "realistic-lcm"
   | "realistic"
   | "majicmix"
+  | "photon"
+  | "cyberrealistic"
   | "dreamshaper"
+  | "openjourney"
   | "counterfeit"
+  | "toonyou"
+
+export interface ModelMeta {
+  id: GenerationModel
+  labelKey: string
+  introKey: string
+  estimatedSec: number
+}
+
+/** 前端模型注册表（单一数据源，含 id、展示文案 key、介绍文案 key、预估时长与选项顺序） */
+export const MODEL_REGISTRY: readonly ModelMeta[] = [
+  {
+    id: "realistic-lcm",
+    labelKey: "generate.model.realistic-lcm",
+    introKey: "generate.modelIntro.realistic-lcm",
+    estimatedSec: 100
+  },
+  {
+    id: "realistic",
+    labelKey: "generate.model.realistic",
+    introKey: "generate.modelIntro.realistic",
+    estimatedSec: 250
+  },
+  {
+    id: "majicmix",
+    labelKey: "generate.model.majicmix",
+    introKey: "generate.modelIntro.majicmix",
+    estimatedSec: 250
+  },
+  {
+    id: "photon",
+    labelKey: "generate.model.photon",
+    introKey: "generate.modelIntro.photon",
+    estimatedSec: 250
+  },
+  {
+    id: "cyberrealistic",
+    labelKey: "generate.model.cyberrealistic",
+    introKey: "generate.modelIntro.cyberrealistic",
+    estimatedSec: 250
+  },
+  {
+    id: "dreamshaper",
+    labelKey: "generate.model.dreamshaper",
+    introKey: "generate.modelIntro.dreamshaper",
+    estimatedSec: 250
+  },
+  {
+    id: "openjourney",
+    labelKey: "generate.model.openjourney",
+    introKey: "generate.modelIntro.openjourney",
+    estimatedSec: 250
+  },
+  {
+    id: "counterfeit",
+    labelKey: "generate.model.counterfeit",
+    introKey: "generate.modelIntro.counterfeit",
+    estimatedSec: 250
+  },
+  {
+    id: "toonyou",
+    labelKey: "generate.model.toonyou",
+    introKey: "generate.modelIntro.toonyou",
+    estimatedSec: 250
+  }
+] as const
 
 export const DEFAULT_MODEL: GenerationModel = "realistic-lcm"
 
-/** 可选模型列表（仅机器值；展示文案走 locales 的 generate.model.*） */
-export const MODEL_OPTIONS: GenerationModel[] = [
-  "realistic-lcm",
-  "realistic",
-  "majicmix",
-  "dreamshaper",
-  "counterfeit"
-]
+/** 可选模型列表（从注册表派生，顺序严格对齐规格） */
+export const MODEL_OPTIONS: GenerationModel[] = MODEL_REGISTRY.map(
+  (item) => item.id
+)
+
+/** 获取模型元数据；未知或缺失时回退默认模型元数据 */
+export function getModelMeta(model?: string | null): ModelMeta {
+  const match = MODEL_REGISTRY.find((m) => m.id === model)
+  return match ?? MODEL_REGISTRY[0]
+}
 
 /** 模型展示文案的 i18n key；未知或缺失时回落默认模型的 key。 */
 export function modelLabelKey(model?: string | null): string {
-  const m =
-    model && MODEL_OPTIONS.includes(model as GenerationModel)
-      ? model
-      : DEFAULT_MODEL
-  return `generate.model.${m}`
+  return getModelMeta(model).labelKey
+}
+
+/** 模型介绍文案的 i18n key */
+export function modelIntroKey(model?: string | null): string {
+  return getModelMeta(model).introKey
 }
 
 /** GET /api/gen/health：机器探活。online:false 时无 ready 字段。 */
