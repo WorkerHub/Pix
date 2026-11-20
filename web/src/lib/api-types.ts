@@ -222,7 +222,7 @@ export type GenerationModel =
   | "dreamshaper"
   | "counterfeit"
 
-export const DEFAULT_MODEL: GenerationModel = "realistic"
+export const DEFAULT_MODEL: GenerationModel = "realistic-lcm"
 
 /** 可选模型列表（仅机器值；展示文案走 locales 的 generate.model.*） */
 export const MODEL_OPTIONS: GenerationModel[] = [
