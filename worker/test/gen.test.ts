@@ -17,8 +17,6 @@ import { findGenerationByJobId } from "../src/db/queries/generations"
 import {
   ALLOWED_MODELS,
   DEFAULT_MODEL,
-  PENDING_ORPHAN_TTL_MS,
-  PENDING_PREFIX,
   buildMachineUrl,
   cleanupOrphanPending,
   extractMachineToken,
@@ -1388,7 +1386,9 @@ describe("POST /api/gen 提交生图顺手扫删 _pending 孤儿", () => {
 
   it("当 R2 清理出现异常时，记录 warn 且不阻断生图主流程", async () => {
     const r2 = ctx.env.IMAGES as unknown as MockR2Bucket
-    vi.spyOn(r2, "list").mockRejectedValue(new Error("R2 temporary unavailable"))
+    vi.spyOn(r2, "list").mockRejectedValue(
+      new Error("R2 temporary unavailable")
+    )
     const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {})
 
     vi.spyOn(globalThis, "fetch").mockResolvedValue(
