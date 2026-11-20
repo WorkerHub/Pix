@@ -194,6 +194,7 @@
   "generate": {
     "title": "Generate",
     "prompt": "Prompt",
+    "resizePrompt": "Resize prompt input",
     "size": "Size",
     "sizePortrait": "Portrait",
     "sizeSquare": "Square",
