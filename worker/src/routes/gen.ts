@@ -43,6 +43,69 @@ export type GenerationModel = (typeof ALLOWED_MODELS)[number]
 
 export const DEFAULT_MODEL: GenerationModel = "realistic-lcm"
 
+export const PENDING_PREFIX = "_pending/"
+export const PENDING_ORPHAN_TTL_MS = 60 * 60 * 1000 // 1 小时安全阈值
+
+export interface CleanupOrphanOptions {
+  now?: number | Date
+  thresholdMs?: number
+  limit?: number
+}
+
+/**
+ * 顺手清理：扫描 R2 桶中 _pending/ 前缀下 uploaded 超过 1 小时的孤儿 JSON 文件。
+ * 严格限制在 _pending/ 前缀下且以 .json 结尾的对象，不触碰正式图、索引表及其它文件。
+ * 异常降级为 warn 日志，绝不阻断生图主流程。
+ */
+export async function cleanupOrphanPending(
+  bucket?: R2Bucket | null,
+  options?: CleanupOrphanOptions
+): Promise<number> {
+  if (!bucket) {
+    return 0
+  }
+
+  const thresholdMs = options?.thresholdMs ?? PENDING_ORPHAN_TTL_MS
+  const nowMs =
+    options?.now instanceof Date
+      ? options.now.getTime()
+      : typeof options?.now === "number"
+        ? options.now
+        : Date.now()
+  const limit = options?.limit ?? 1000
+
+  let deletedCount = 0
+  try {
+    const listed = await bucket.list({
+      prefix: PENDING_PREFIX,
+      limit
+    })
+
+    const toDelete: string[] = []
+    for (const item of listed.objects) {
+      if (
+        item.key.startsWith(PENDING_PREFIX) &&
+        item.key.endsWith(".json") &&
+        item.uploaded
+      ) {
+        const uploadedMs = new Date(item.uploaded).getTime()
+        if (nowMs - uploadedMs > thresholdMs) {
+          toDelete.push(item.key)
+        }
+      }
+    }
+
+    if (toDelete.length > 0) {
+      await bucket.delete(toDelete)
+      deletedCount = toDelete.length
+    }
+  } catch (err) {
+    console.warn("Failed to cleanup orphan pending files:", err)
+  }
+
+  return deletedCount
+}
+
 export function isValidModel(model: unknown): model is GenerationModel {
   return (
     typeof model === "string" &&
@@ -224,6 +287,15 @@ genRoutes.post("/", async (c) => {
     )
   }
 
+  // 顺手清理：提交生图前扫删 _pending/ 超过 1 小时的孤儿 JSON（异常降级为 warn，不阻断主流程）
+  if (c.env.IMAGES) {
+    try {
+      await cleanupOrphanPending(c.env.IMAGES)
+    } catch (err) {
+      console.warn("Failed to cleanup orphan pending files:", err)
+    }
+  }
+
   const defaultModel = resolveDefaultModel(c.env)
   const selectedModel: GenerationModel =
     body.model === undefined || body.model === null ? defaultModel : body.model
@@ -264,8 +336,7 @@ genRoutes.post("/", async (c) => {
         const jobId = data.jobId
         const userId = currentUserId(c)
         // 暂存提交元数据，供 GET /image/:jobId 成功落库时消费并删除。
-        // 注意：任务失败 / 用户弃单 / 从不取图时，这个 JSON 会残留；
-        // 已知轻微存储泄漏，暂无 TTL 清理，容量影响可忽略。
+        // 若任务失败 / 用户弃单 / 从不取图导致残留，会在后续 POST / 提交生图时由 cleanupOrphanPending 顺手清理（> 1 小时）。
         if (c.env.IMAGES) {
           try {
             await c.env.IMAGES.put(
