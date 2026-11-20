@@ -19,7 +19,6 @@ import {
   GEN_PROGRESS_CAP,
   GEN_TIMEOUT_MS,
   HEALTH_INTERACTION_THROTTLE_MS,
-  HEALTH_POLL_INTERVAL_MS,
   HISTORY_POLL_DELAYS,
   isTimedOut,
   mergeHistoryItems,
@@ -470,9 +469,8 @@ describe("gen helpers", () => {
   })
 
   describe("deriveMachineStatus 与健康检查间隔常量", () => {
-    it("交互节流间隔为 5 分钟，旧轮询常量符合向后兼容定义", () => {
+    it("交互节流间隔为 5 分钟", () => {
       expect(HEALTH_INTERACTION_THROTTLE_MS).toBe(5 * 60 * 1000)
-      expect(HEALTH_POLL_INTERVAL_MS).toBe(15000)
     })
 
     it("有任务生成中/提交中/机器忙碌时，状态判定为 busy", () => {
