@@ -279,6 +279,7 @@ export interface GenerationHistoryItem {
   size: GenerateSize
   created_at: string
   imageUrl: string
+  duration_seconds?: number | null
 }
 
 /** GET /api/gen/history 响应 */

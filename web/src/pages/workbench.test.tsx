@@ -1,9 +1,17 @@
-import { act, fireEvent, render, screen, waitFor } from "@testing-library/react"
+import {
+  act,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within
+} from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { i18n } from "@/i18n"
 import type { GenerationHistoryItem } from "@/lib/api-types"
 import {
+  formatHistoryMeta,
   GEN_JOB_STORAGE_KEY,
   HISTORY_POLL_DELAYS,
   writeStoredJob
@@ -39,7 +47,8 @@ const mockHistoryItems: GenerationHistoryItem[] = [
     prompt_effective: "surfing dog",
     size: "portrait",
     created_at: "2026-11-20T10:00:00Z",
-    imageUrl: "/api/gen/history/101/image"
+    imageUrl: "/api/gen/history/101/image",
+    duration_seconds: 65
   },
   {
     id: 102,
@@ -49,7 +58,8 @@ const mockHistoryItems: GenerationHistoryItem[] = [
     prompt_effective: "cyberpunk city night",
     size: "square",
     created_at: "2026-11-20T10:05:00Z",
-    imageUrl: "/api/gen/history/102/image"
+    imageUrl: "/api/gen/history/102/image",
+    duration_seconds: null
   }
 ]
 
@@ -350,6 +360,103 @@ describe("卡通风格生图页（并入 #14 历史区）", () => {
     })
   })
 
+  it("首屏防误显超时：挂载时若存在已超时残留 job，清除存储并保持空闲态", async () => {
+    // 模拟上一会话遗留的旧任务（如 15 分钟前提交，早已超时）
+    const staleTime = Date.now() - 15 * 60 * 1000
+    writeStoredJob({
+      jobId: "job-stale-timeout",
+      prompt: "上一会话遗留提示词",
+      size: "square",
+      submittedAt: staleTime
+    })
+
+    renderPage()
+
+    // 1. 首屏不得出现「生成超时」或「再查一次」
+    expect(screen.queryByText("生成超时")).not.toBeInTheDocument()
+    expect(
+      screen.queryByRole("button", { name: "再查一次" })
+    ).not.toBeInTheDocument()
+
+    // 2. 画布处于正常待机态（PIX 字标）
+    expect(screen.getByText("PIX")).toBeInTheDocument()
+
+    // 3. 提示词不强制回填旧残留，保持空白可直接输入
+    const textarea = screen.getByPlaceholderText("提示词")
+    expect(textarea).toHaveValue("")
+    expect(screen.getByRole("button", { name: "生成" })).toBeDisabled()
+
+    // 4. 残留存储已被自动清理，避免后续刷新再次受影响
+    expect(localStorage.getItem(GEN_JOB_STORAGE_KEY)).toBeNull()
+
+    // 5. 触发了健康检查且未发起过期任务的单次状态查询
+    expect(genApi.health).toHaveBeenCalled()
+    expect(genApi.status).not.toHaveBeenCalled()
+  })
+
+  it("已完成任务自动清理存储：轮询出图完成后清空存储，再次进入首屏为空闲态且历史条可见", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    const completedItem: GenerationHistoryItem = {
+      id: 201,
+      job_id: "job-done-cleanup",
+      model: "realistic-lcm",
+      prompt_original: "已完成的图",
+      prompt_effective: "finished image",
+      size: "portrait",
+      created_at: "2026-11-20T10:00:00Z",
+      imageUrl: "/api/gen/history/201/image"
+    }
+
+    vi.mocked(genApi.submit).mockResolvedValue({ jobId: "job-done-cleanup" })
+    vi.mocked(genApi.status).mockResolvedValue({ state: "done" })
+    vi.mocked(genApi.history).mockResolvedValue({
+      items: [completedItem],
+      total: 1,
+      page: 1,
+      pageSize: 12,
+      totalPages: 1
+    })
+
+    const { unmount } = renderPage()
+
+    // 提交生图并进入 done 态
+    const textarea = screen.getByPlaceholderText("提示词")
+    fireEvent.change(textarea, { target: { value: "已完成的图" } })
+    fireEvent.click(screen.getByRole("button", { name: "生成" }))
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "生成中" })).toBeInTheDocument()
+    })
+
+    // 推进 5 秒出图
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(5000)
+    })
+
+    await waitFor(() => {
+      const output = screen.getByTestId("gen-output")
+      expect(output.querySelector("img")).toHaveAttribute(
+        "src",
+        "/api/gen/image/job-done-cleanup"
+      )
+    })
+
+    // 出图后存储已被清除
+    expect(localStorage.getItem(GEN_JOB_STORAGE_KEY)).toBeNull()
+
+    // 卸载并模拟用户「关闭页面后再次进入生图页」
+    unmount()
+    vi.useRealTimers()
+
+    renderPage()
+
+    // 再次进入：画布为空闲待机态，绝不误显「生成超时」，历史条正常可见
+    expect(screen.queryByText("生成超时")).not.toBeInTheDocument()
+    expect(screen.getByText("PIX")).toBeInTheDocument()
+    expect(await screen.findByText("#201")).toBeInTheDocument()
+    expect(screen.getByText("已完成的图")).toBeInTheDocument()
+  })
+
   it("历史区：展示历史卡片、原图灯箱查看、下载链接与删除确认", async () => {
     vi.mocked(genApi.history).mockResolvedValue({
       items: mockHistoryItems,
@@ -374,15 +481,39 @@ describe("卡通风格生图页（并入 #14 历史区）", () => {
       "/api/gen/history/101/image?download=1"
     )
 
-    // 3. 点击缩略图打开原图灯箱 Dialog
-    const viewThumbnails = screen.getAllByTitle("查看原图")
+    // 3. 悬浮展示 Tooltip 元信息浮层，点击缩略图打开原图灯箱 Dialog 展示元信息与提示词原文
+    const user = userEvent.setup()
+    const viewThumbnails = screen.getAllByRole("button", { name: "查看原图" })
+    const meta101 = formatHistoryMeta(mockHistoryItems[0], i18n.t)
+
+    await user.hover(viewThumbnails[0])
+    expect(await screen.findByRole("tooltip")).toHaveTextContent(meta101)
+    await user.unhover(viewThumbnails[0])
+
     fireEvent.click(viewThumbnails[0])
 
-    await waitFor(() => {
-      expect(screen.getByRole("dialog")).toBeInTheDocument()
-    })
+    const dialog = await screen.findByRole("dialog")
+    expect(within(dialog).getByText(meta101)).toBeInTheDocument()
+    expect(within(dialog).getByText("小狗在沙滩冲浪")).toBeInTheDocument()
+
     // 灯箱内关闭
-    fireEvent.click(screen.getByRole("button", { name: "关闭" }))
+    fireEvent.click(within(dialog).getByRole("button", { name: "关闭" }))
+    await waitFor(() => {
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument()
+    })
+
+    // 测试老记录（#102，duration_seconds 为 null）打开灯箱展示元信息（省略耗时段）与提示词
+    fireEvent.click(viewThumbnails[1])
+    const dialog102 = await screen.findByRole("dialog")
+    const meta102 = formatHistoryMeta(mockHistoryItems[1], i18n.t)
+    expect(within(dialog102).getByText(meta102)).toBeInTheDocument()
+    expect(meta102).not.toContain("秒")
+    expect(meta102).not.toContain("分")
+    expect(within(dialog102).getByText("未来城市夜景")).toBeInTheDocument()
+    fireEvent.click(within(dialog102).getByRole("button", { name: "关闭" }))
+    await waitFor(() => {
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument()
+    })
 
     // 4. 删除历史项确认流程
     const deleteButtons = screen.getAllByRole("button", { name: "删除" })
@@ -818,5 +949,48 @@ describe("卡通风格生图页（并入 #14 历史区）", () => {
     expect(screen.getByRole("radio", { name: "Square" })).toBeInTheDocument()
     expect(screen.getByRole("button", { name: "Generate" })).toBeInTheDocument()
     expect(screen.getByText("History")).toBeInTheDocument()
+  })
+
+  it("历史条目元信息：支持未知模型回退原始 id 与秒级耗时展示", async () => {
+    const customItems: GenerationHistoryItem[] = [
+      {
+        id: 201,
+        job_id: "job-201",
+        model: "special-custom-model",
+        prompt_original: "未知模型的特殊生成图",
+        prompt_effective: "special prompt",
+        size: "portrait",
+        created_at: "2026-11-20T10:10:00Z",
+        imageUrl: "/api/gen/history/201/image",
+        duration_seconds: 45
+      }
+    ]
+
+    vi.mocked(genApi.history).mockResolvedValueOnce({
+      items: customItems,
+      total: 1,
+      page: 1,
+      pageSize: 12,
+      totalPages: 1
+    })
+
+    renderPage()
+
+    const viewThumbnails = await screen.findAllByRole("button", {
+      name: "查看原图"
+    })
+    const meta = formatHistoryMeta(customItems[0], i18n.t)
+    expect(meta).toContain("special-custom-model")
+    expect(meta).toContain("45秒")
+
+    const user = userEvent.setup()
+    await user.hover(viewThumbnails[0])
+    expect(await screen.findByRole("tooltip")).toHaveTextContent(meta)
+    await user.unhover(viewThumbnails[0])
+
+    fireEvent.click(viewThumbnails[0])
+    const dialog = await screen.findByRole("dialog")
+    expect(within(dialog).getByText(meta)).toBeInTheDocument()
+    expect(within(dialog).getByText("未知模型的特殊生成图")).toBeInTheDocument()
   })
 })

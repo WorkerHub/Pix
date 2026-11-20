@@ -1,6 +1,7 @@
 import http.server
 import json
 import threading
+import time
 from urllib.parse import parse_qs, urlparse
 import pytest
 from starlette.testclient import TestClient
@@ -467,7 +468,7 @@ def test_image_409_when_job_not_ready(client, mock_comfy_server):
 
 
 def test_image_200_when_done(client, mock_comfy_server):
-    """任务完成 -> 200 image/png"""
+    """任务完成 -> 200 image/png，未追踪任务不带 X-Pix-Elapsed-Seconds 头"""
     mock_comfy_server.state["history"] = {
         "job-success-1": {
             "status": {"status_str": "success", "completed": True},
@@ -480,6 +481,81 @@ def test_image_200_when_done(client, mock_comfy_server):
     assert resp.status_code == 200
     assert resp.headers["content-type"] == "image/png"
     assert resp.content.startswith(b"\x89PNG")
+    assert "x-pix-elapsed-seconds" not in resp.headers
+
+
+def test_image_200_with_elapsed_seconds_tracked_job(client, mock_comfy_server):
+    """已追踪任务图片就绪：响应头携带 X-Pix-Elapsed-Seconds 整数秒"""
+    job_id = "job-tracked-elapsed-1"
+    tracked_jobs[job_id] = {
+        "created_at": time.time() - 3.2,
+        "prompt": "test prompt",
+    }
+    mock_comfy_server.state["history"] = {
+        job_id: {
+            "status": {"status_str": "success", "completed": True},
+            "outputs": {
+                "7": {"images": [{"filename": "Pix_0001.png", "subfolder": "", "type": "output"}]}
+            },
+        }
+    }
+
+    resp = client.get(f"/image/{job_id}", headers=AUTH_HEADERS)
+    assert resp.status_code == 200
+    assert resp.headers["content-type"] == "image/png"
+    assert "x-pix-elapsed-seconds" in resp.headers
+    assert resp.headers["x-pix-elapsed-seconds"] == "3"
+    assert tracked_jobs[job_id]["elapsed_seconds"] == 3
+
+
+def test_image_200_elapsed_seconds_idempotent(client, mock_comfy_server):
+    """已计算过耗时的任务多次请求，X-Pix-Elapsed-Seconds 保持幂等不递增"""
+    job_id = "job-tracked-elapsed-cached"
+    tracked_jobs[job_id] = {
+        "created_at": time.time() - 10.0,
+        "elapsed_seconds": 4,
+    }
+    mock_comfy_server.state["history"] = {
+        job_id: {
+            "status": {"status_str": "success", "completed": True},
+            "outputs": {
+                "7": {"images": [{"filename": "Pix_0001.png", "subfolder": "", "type": "output"}]}
+            },
+        }
+    }
+
+    resp1 = client.get(f"/image/{job_id}", headers=AUTH_HEADERS)
+    assert resp1.status_code == 200
+    assert resp1.headers.get("x-pix-elapsed-seconds") == "4"
+
+    resp2 = client.get(f"/image/{job_id}", headers=AUTH_HEADERS)
+    assert resp2.status_code == 200
+    assert resp2.headers.get("x-pix-elapsed-seconds") == "4"
+
+
+def test_image_200_after_generate_flow(client, mock_comfy_server):
+    """经由 POST /generate 提交的任务，取图时返回合法整数秒 X-Pix-Elapsed-Seconds"""
+    model_manager.checkpoints_ready["majicmix"] = True
+    gen_resp = client.post("/generate", json={"prompt": "cat", "model": "majicmix"}, headers=AUTH_HEADERS)
+    assert gen_resp.status_code == 202
+    job_id = gen_resp.json()["jobId"]
+
+    # 模拟任务完成并产出图片
+    mock_comfy_server.state["history"] = {
+        job_id: {
+            "status": {"status_str": "success", "completed": True},
+            "outputs": {
+                "7": {"images": [{"filename": "Pix_cat.png", "subfolder": "", "type": "output"}]}
+            },
+        }
+    }
+
+    img_resp = client.get(f"/image/{job_id}", headers=AUTH_HEADERS)
+    assert img_resp.status_code == 200
+    assert "x-pix-elapsed-seconds" in img_resp.headers
+    elapsed_str = img_resp.headers["x-pix-elapsed-seconds"]
+    assert elapsed_str.isdigit()
+    assert int(elapsed_str) >= 0
 
 
 def test_image_500_when_execution_failed(client, mock_comfy_server):

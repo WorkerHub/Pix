@@ -1,3 +1,4 @@
+import type { TFunction } from "i18next"
 import {
   type GenerationHistoryItem,
   type GenerationModel,
@@ -217,4 +218,88 @@ export function appendHistoryItems(
   }
 
   return result
+}
+
+/** 历史条目生成时间格式化为 MM-DD HH:mm（按浏览器本地时区）。 */
+export function formatHistoryDate(createdAt: string | number | Date): string {
+  const d = new Date(createdAt)
+  if (Number.isNaN(d.getTime())) return ""
+  const m = String(d.getMonth() + 1).padStart(2, "0")
+  const day = String(d.getDate()).padStart(2, "0")
+  const h = String(d.getHours()).padStart(2, "0")
+  const min = String(d.getMinutes()).padStart(2, "0")
+  return `${m}-${day} ${h}:${min}`
+}
+
+/**
+ * 格式化模型显示名：按模型 id 查前端模型注册表映射，未知 id 显示原始 id。
+ */
+export function formatModelDisplayName(
+  model: string | null | undefined,
+  t: TFunction
+): string {
+  if (!model) return ""
+  const key = `generate.model.${model}`
+  return t(key, { defaultValue: model })
+}
+
+/**
+ * 格式化历史耗时：
+ * 满 1 分钟显示 X分XX秒，不足 1 分钟显示 XX秒。
+ * 无耗时（null / undefined / 非正数）返回 null。
+ */
+export function formatHistoryDuration(
+  seconds: number | null | undefined,
+  t: TFunction
+): string | null {
+  if (
+    seconds === null ||
+    seconds === undefined ||
+    typeof seconds !== "number" ||
+    !Number.isFinite(seconds) ||
+    seconds < 0
+  ) {
+    return null
+  }
+  const totalSeconds = Math.floor(seconds)
+  if (totalSeconds >= 60) {
+    const minutes = Math.floor(totalSeconds / 60)
+    const remSeconds = String(totalSeconds % 60).padStart(2, "0")
+    return t("history.durationMinutesSeconds", {
+      minutes,
+      seconds: remSeconds
+    })
+  }
+  const secStr = String(totalSeconds).padStart(2, "0")
+  return t("history.durationSeconds", { seconds: secStr })
+}
+
+/**
+ * 拼接历史条目元信息：`#编号 · 生成时间 · 模型显示名 · 耗时`。
+ * 老记录无耗时省略耗时段、其余照常。
+ */
+export function formatHistoryMeta(
+  item: {
+    id: number
+    created_at?: string
+    model?: string
+    duration_seconds?: number | null
+  },
+  t: TFunction
+): string {
+  const parts: string[] = []
+  parts.push(`#${item.id}`)
+  if (item.created_at) {
+    const dateStr = formatHistoryDate(item.created_at)
+    if (dateStr) parts.push(dateStr)
+  }
+  if (item.model) {
+    const modelStr = formatModelDisplayName(item.model, t)
+    if (modelStr) parts.push(modelStr)
+  }
+  const durationStr = formatHistoryDuration(item.duration_seconds, t)
+  if (durationStr) {
+    parts.push(durationStr)
+  }
+  return parts.join(" · ")
 }
