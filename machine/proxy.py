@@ -311,7 +311,16 @@ async def get_image(job_id: str):
             if view_resp.status_code != 200:
                 return JSONResponse(status_code=view_resp.status_code, content={"error": "failed to retrieve image from ComfyUI"})
 
-            return Response(content=view_resp.content, media_type="image/png")
+            resp_headers: dict[str, str] = {}
+            if job_id in tracked_jobs and "created_at" in tracked_jobs[job_id]:
+                if "elapsed_seconds" not in tracked_jobs[job_id]:
+                    elapsed = max(0, int(time.time() - tracked_jobs[job_id]["created_at"]))
+                    tracked_jobs[job_id]["elapsed_seconds"] = elapsed
+                else:
+                    elapsed = tracked_jobs[job_id]["elapsed_seconds"]
+                resp_headers["X-Pix-Elapsed-Seconds"] = str(elapsed)
+
+            return Response(content=view_resp.content, media_type="image/png", headers=resp_headers)
     except Exception as e:
         logger.error(f"Error fetching image for {job_id}: {e}")
         return JSONResponse(status_code=500, content={"error": str(e)})
