@@ -211,13 +211,13 @@
     "modelIntro": {
       "realistic-lcm": "Realistic Vision 加 LCM 合并，8 步极速出图",
       "realistic": "Realistic Vision 原版写实",
-      "majicmix": "东方人像写实",
-      "photon": "人像写实，肤质与光影细腻",
-      "cyberrealistic": "通用写实，人物风景都稳",
-      "dreamshaper": "梦幻柔和的通用画风",
-      "openjourney": "Midjourney 风插画感",
-      "counterfeit": "二次元动漫",
-      "toonyou": "纯卡通画风，线条明快"
+      "majicmix": "majicMIX realistic v7，东方人像",
+      "photon": "Photon v1 人像写实，肤质与光影细腻",
+      "cyberrealistic": "CyberRealistic v3.2，通用写实，人物风景都稳",
+      "dreamshaper": "DreamShaper 8，梦幻柔和的通用画风",
+      "openjourney": "OpenJourney v4，Midjourney 风插画感",
+      "counterfeit": "Counterfeit-V3.0，二次元动漫",
+      "toonyou": "ToonYou alpha3，纯卡通画风，线条明快"
     },
     "estimatedTimeSeconds": "预计约 {{seconds}} 秒",
     "estimatedTimeMinutes": "预计约 {{minutes}} 分钟",

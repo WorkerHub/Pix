@@ -99,7 +99,7 @@ describe("ControlPanel 模型选项与浮层规格", () => {
     const photonBtn = screen.getByRole("radio", { name: "人像·光子" })
     await user.hover(photonBtn)
     expect(await screen.findByRole("tooltip")).toHaveTextContent(
-      "人像写实，肤质与光影细腻"
+      "Photon v1 人像写实，肤质与光影细腻"
     )
     expect(await screen.findByRole("tooltip")).toHaveTextContent(
       "预计约 4 分钟"
@@ -113,7 +113,7 @@ describe("ControlPanel 模型选项与浮层规格", () => {
     const toonBtn = screen.getByRole("radio", { name: "卡通" })
     await user.hover(toonBtn)
     expect(await screen.findByRole("tooltip")).toHaveTextContent(
-      "纯卡通画风，线条明快"
+      "ToonYou alpha3，纯卡通画风，线条明快"
     )
     expect(await screen.findByRole("tooltip")).toHaveTextContent(
       "预计约 4 分钟"
@@ -148,7 +148,7 @@ describe("ControlPanel 模型选项与浮层规格", () => {
     })
     const tooltip = screen.getByRole("tooltip")
     expect(tooltip).toBeInTheDocument()
-    expect(tooltip).toHaveTextContent("东方人像写实")
+    expect(tooltip).toHaveTextContent("majicMIX realistic v7，东方人像")
     expect(tooltip).toHaveTextContent("预计约 4 分钟")
 
     // 释放长按 (touchend + click)
@@ -236,7 +236,7 @@ describe("ControlPanel 模型选项与浮层规格", () => {
     const animeBtn = screen.getByRole("radio", { name: "Anime" })
     await user.hover(animeBtn)
     const animeTooltip = await screen.findByRole("tooltip")
-    expect(animeTooltip).toHaveTextContent("2D anime style")
+    expect(animeTooltip).toHaveTextContent("Counterfeit-V3.0, 2D anime style")
     expect(animeTooltip).toHaveTextContent("About 4 minutes")
     await user.unhover(animeBtn)
   })
