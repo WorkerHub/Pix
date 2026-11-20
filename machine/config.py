@@ -167,8 +167,7 @@ MODEL_REGISTRY = {
     },
 }
 
-# 回退条款：LCM 生产验收通过前，默认模型保持 realistic（基座，标准 20 步）。
-DEFAULT_MODEL_ID = os.getenv("DEFAULT_MODEL_ID", "realistic")
+DEFAULT_MODEL_ID = os.getenv("DEFAULT_MODEL_ID", "realistic-lcm")
 
 # Skip model download (for contract testing / offline builds)
 SKIP_MODEL_DOWNLOAD = os.getenv("SKIP_MODEL_DOWNLOAD", "0").lower() in ("1", "true", "yes")
