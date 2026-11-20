@@ -282,15 +282,16 @@ export function appendHistoryItems(
   return result
 }
 
-/** 历史条目生成时间格式化为 MM-DD HH:mm（按浏览器本地时区）。 */
+/** 历史条目生成时间格式化为 YYYY-MM-DD HH:mm（按浏览器本地时区）。 */
 export function formatHistoryDate(createdAt: string | number | Date): string {
   const d = new Date(createdAt)
   if (Number.isNaN(d.getTime())) return ""
+  const y = d.getFullYear()
   const m = String(d.getMonth() + 1).padStart(2, "0")
   const day = String(d.getDate()).padStart(2, "0")
   const h = String(d.getHours()).padStart(2, "0")
   const min = String(d.getMinutes()).padStart(2, "0")
-  return `${m}-${day} ${h}:${min}`
+  return `${y}-${m}-${day} ${h}:${min}`
 }
 
 /**
@@ -337,12 +338,11 @@ export function formatHistoryDuration(
 }
 
 /**
- * 拼接历史条目元信息：`#编号 · 生成时间 · 模型显示名 · 耗时`。
+ * 拼接历史条目副元信息（不含编号）：`生成时间 · 模型显示名 · 耗时`。
  * 老记录无耗时省略耗时段、其余照常。
  */
-export function formatHistoryMeta(
+export function formatHistorySubMeta(
   item: {
-    id: number
     created_at?: string
     model?: string
     duration_seconds?: number | null
@@ -350,7 +350,6 @@ export function formatHistoryMeta(
   t: TFunction
 ): string {
   const parts: string[] = []
-  parts.push(`#${item.id}`)
   if (item.created_at) {
     const dateStr = formatHistoryDate(item.created_at)
     if (dateStr) parts.push(dateStr)
@@ -364,4 +363,21 @@ export function formatHistoryMeta(
     parts.push(durationStr)
   }
   return parts.join(" · ")
+}
+
+/**
+ * 拼接历史条目元信息：`#编号 · 生成时间 · 模型显示名 · 耗时`。
+ * 老记录无耗时省略耗时段、其余照常。
+ */
+export function formatHistoryMeta(
+  item: {
+    id: number
+    created_at?: string
+    model?: string
+    duration_seconds?: number | null
+  },
+  t: TFunction
+): string {
+  const subMeta = formatHistorySubMeta(item, t)
+  return subMeta ? `#${item.id} · ${subMeta}` : `#${item.id}`
 }

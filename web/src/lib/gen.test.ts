@@ -12,6 +12,7 @@ import {
   formatHistoryDate,
   formatHistoryDuration,
   formatHistoryMeta,
+  formatHistorySubMeta,
   formatModelDisplayName,
   GEN_JOB_STORAGE_KEY,
   GEN_POLL_INTERVAL_MS,
@@ -300,10 +301,10 @@ describe("gen helpers", () => {
     })
 
     describe("formatHistoryDate", () => {
-      it("按本地时区格式化为 MM-DD HH:mm", () => {
+      it("按本地时区格式化为 YYYY-MM-DD HH:mm", () => {
         // 创建固定本地时区的时间
         const date = new Date(2026, 10, 20, 18, 5) // 2026-11-20 18:05
-        expect(formatHistoryDate(date)).toBe("11-20 18:05")
+        expect(formatHistoryDate(date)).toBe("2026-11-20 18:05")
       })
 
       it("非法日期返回空串", () => {
@@ -362,6 +363,57 @@ describe("gen helpers", () => {
       })
     })
 
+    describe("formatHistorySubMeta", () => {
+      it("完整字段包含耗时", () => {
+        const localDate = new Date(2026, 10, 20, 18, 5).toISOString()
+        const expectedDate = formatHistoryDate(localDate)
+        const subMeta = formatHistorySubMeta(
+          {
+            created_at: localDate,
+            model: "realistic-lcm",
+            duration_seconds: 65
+          },
+          i18n.t
+        )
+        expect(subMeta).toBe(`${expectedDate} · 写实·极速 · 1分05秒`)
+      })
+
+      it("老记录无耗时（duration_seconds 为 null / undefined）时自动省略耗时段", () => {
+        const localDate = new Date(2026, 10, 20, 18, 5).toISOString()
+        const expectedDate = formatHistoryDate(localDate)
+        const subMeta = formatHistorySubMeta(
+          {
+            created_at: localDate,
+            model: "realistic-lcm",
+            duration_seconds: null
+          },
+          i18n.t
+        )
+        expect(subMeta).toBe(`${expectedDate} · 写实·极速`)
+      })
+
+      it("未知模型回退原始 id", () => {
+        const localDate = new Date(2026, 10, 20, 18, 5).toISOString()
+        const expectedDate = formatHistoryDate(localDate)
+        const subMeta = formatHistorySubMeta(
+          {
+            created_at: localDate,
+            model: "custom-special-model",
+            duration_seconds: 45
+          },
+          i18n.t
+        )
+        expect(subMeta).toBe(`${expectedDate} · custom-special-model · 45秒`)
+      })
+
+      it("无额外元信息时返回空串", () => {
+        expect(formatHistorySubMeta({}, i18n.t)).toBe("")
+        expect(formatHistorySubMeta({ model: "realistic-lcm" }, i18n.t)).toBe(
+          "写实·极速"
+        )
+      })
+    })
+
     describe("formatHistoryMeta", () => {
       it("完整字段包含耗时", () => {
         const localDate = new Date(2026, 10, 20, 18, 5).toISOString()
@@ -408,6 +460,10 @@ describe("gen helpers", () => {
         expect(meta).toBe(
           `#103 · ${expectedDate} · custom-special-model · 45秒`
         )
+      })
+
+      it("无额外元信息时仅返回 #编号", () => {
+        expect(formatHistoryMeta({ id: 104 }, i18n.t)).toBe("#104")
       })
     })
   })
