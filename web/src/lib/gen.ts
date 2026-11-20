@@ -3,6 +3,7 @@ import {
   type GenerationHistoryItem,
   type GenerationModel,
   type GenerateSize,
+  getModelMeta,
   MODEL_OPTIONS
 } from "@/lib/api-types"
 
@@ -18,8 +19,44 @@ export type GenPhase =
   | "error"
   | "timeout"
 
-/** 轮询间隔：5 秒 */
+/** 机器连接状态指示四态（纯前端派生展示，不涉及后端契约） */
+export type MachineStatus = "connected" | "busy" | "connecting" | "offline"
+
+/** 生图任务状态轮询间隔：5 秒 */
 export const GEN_POLL_INTERVAL_MS = 5000
+
+/** 机器健康检查轮询间隔：15 秒 */
+export const HEALTH_POLL_INTERVAL_MS = 15000
+
+export interface MachineStatusOptions {
+  phase: GenPhase
+  healthInFlight: boolean
+  machineHealth: "connected" | "starting" | "offline"
+}
+
+/**
+ * 根据生成阶段与健康状态派生机器连接状态（四态）：
+ * 1. 忙碌（busy）：有任务正在提交、生成中或机器报忙；
+ * 2. 连接中（connecting）：健康检查在途/重试中，或机器处于闲置挂起后的唤醒等待期（ready === false）；
+ * 3. 离线（offline）：健康检查失败或机器不可达；
+ * 4. 已连接（connected）：健康检查通过且空闲。
+ */
+export function deriveMachineStatus({
+  phase,
+  healthInFlight,
+  machineHealth
+}: MachineStatusOptions): MachineStatus {
+  if (phase === "submitting" || phase === "generating" || phase === "busy") {
+    return "busy"
+  }
+  if (healthInFlight || machineHealth === "starting" || phase === "starting") {
+    return "connecting"
+  }
+  if (machineHealth === "offline" || phase === "offline") {
+    return "offline"
+  }
+  return "connected"
+}
 
 /** 超时阈值：12 分钟 */
 export const GEN_TIMEOUT_MS = 12 * 60 * 1000
@@ -94,9 +131,34 @@ export function isTimedOut(submittedAt: number, now = Date.now()): boolean {
   return now - submittedAt >= GEN_TIMEOUT_MS
 }
 
-/** 各模型预估生成时长（秒）——写实·极速 100，其余 250。 */
+/** 各模型预估生成时长（秒）——从模型注册表单一数据源派生（写实·极速 100，其余 250）。 */
 export function estimatedGenDurationSec(model?: GenerationModel): number {
-  return model === "realistic-lcm" ? 100 : 250
+  if (!model) return 250
+  return getModelMeta(model).estimatedSec
+}
+
+/**
+ * 格式化模型预估耗时文案（与 estimatedGenDurationSec / 进度条同源派生）
+ * realistic-lcm: 100秒 -> 预计约 100 秒
+ * 其他模型: 250秒 -> 预计约 4 分钟
+ */
+export function formatEstimatedDuration(
+  estimatedSec: number,
+  t: TFunction
+): string {
+  if (estimatedSec <= 100) {
+    return t("generate.estimatedTimeSeconds", { seconds: estimatedSec })
+  }
+  const minutes = Math.round(estimatedSec / 60)
+  return t("generate.estimatedTimeMinutes", { minutes })
+}
+
+/** 获取指定模型的预估耗时文案 */
+export function modelEstimatedDurationText(
+  model: GenerationModel | undefined,
+  t: TFunction
+): string {
+  return formatEstimatedDuration(estimatedGenDurationSec(model), t)
 }
 
 /** 进度封顶（真图到达前最多 95%）。 */

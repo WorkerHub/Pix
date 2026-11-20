@@ -2,11 +2,19 @@ import { useCallback, useEffect, useRef, useState } from "react"
 import { useTranslation } from "react-i18next"
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group"
 import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger
+} from "@/components/ui/tooltip"
+import {
   type GenerateSize,
   type GenerationModel,
   MODEL_OPTIONS,
+  modelIntroKey,
   modelLabelKey
 } from "@/lib/api-types"
+import { modelEstimatedDurationText } from "@/lib/gen"
 import {
   calculateMaxPromptHeight,
   clampPromptHeight,
@@ -32,6 +40,144 @@ interface ControlPanelProps {
   offline: boolean
   onSubmit: () => void
   className?: string
+}
+
+interface ModelOptionItemProps {
+  model: GenerationModel
+}
+
+function ModelOptionItem({ model }: ModelOptionItemProps) {
+  const { t } = useTranslation()
+  const [open, setOpen] = useState(false)
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const startPosRef = useRef<{ x: number; y: number } | null>(null)
+  const isLongPressRef = useRef(false)
+
+  const clearTimer = useCallback(() => {
+    if (timerRef.current) {
+      clearTimeout(timerRef.current)
+      timerRef.current = null
+    }
+  }, [])
+
+  useEffect(() => {
+    return () => clearTimer()
+  }, [clearTimer])
+
+  const handlePointerDown = (e: React.PointerEvent) => {
+    if (e.pointerType === "mouse") return
+    startPosRef.current = { x: e.clientX, y: e.clientY }
+    isLongPressRef.current = false
+    clearTimer()
+    timerRef.current = setTimeout(() => {
+      isLongPressRef.current = true
+      setOpen(true)
+    }, 400)
+  }
+
+  const handlePointerMove = (e: React.PointerEvent) => {
+    if (e.pointerType === "mouse" || !startPosRef.current) return
+    const dx = e.clientX - startPosRef.current.x
+    const dy = e.clientY - startPosRef.current.y
+    if (Math.hypot(dx, dy) > 10) {
+      clearTimer()
+    }
+  }
+
+  const handlePointerUp = () => {
+    clearTimer()
+  }
+
+  const handlePointerCancel = () => {
+    clearTimer()
+  }
+
+  const handleTouchStart = (e: React.TouchEvent) => {
+    const touch = e.touches[0]
+    startPosRef.current = { x: touch.clientX, y: touch.clientY }
+    isLongPressRef.current = false
+    clearTimer()
+    timerRef.current = setTimeout(() => {
+      isLongPressRef.current = true
+      setOpen(true)
+    }, 400)
+  }
+
+  const handleTouchMove = (e: React.TouchEvent) => {
+    if (!startPosRef.current) return
+    const touch = e.touches[0]
+    const dx = touch.clientX - startPosRef.current.x
+    const dy = touch.clientY - startPosRef.current.y
+    if (Math.hypot(dx, dy) > 10) {
+      clearTimer()
+    }
+  }
+
+  const handleTouchEnd = () => {
+    clearTimer()
+  }
+
+  const handleTouchCancel = () => {
+    clearTimer()
+  }
+
+  const handleContextMenu = (e: React.MouseEvent) => {
+    if (isLongPressRef.current) {
+      e.preventDefault()
+    }
+  }
+
+  const handleClickCapture = (e: React.MouseEvent) => {
+    if (isLongPressRef.current) {
+      e.preventDefault()
+      e.stopPropagation()
+      setTimeout(() => {
+        isLongPressRef.current = false
+      }, 0)
+    }
+  }
+
+  return (
+    <Tooltip open={open} onOpenChange={setOpen}>
+      <TooltipTrigger asChild>
+        <div className="flex w-full">
+          <ToggleGroupItem
+            value={model}
+            aria-label={t(modelLabelKey(model))}
+            onPointerDown={handlePointerDown}
+            onPointerMove={handlePointerMove}
+            onPointerUp={handlePointerUp}
+            onPointerCancel={handlePointerCancel}
+            onTouchStart={handleTouchStart}
+            onTouchMove={handleTouchMove}
+            onTouchEnd={handleTouchEnd}
+            onTouchCancel={handleTouchCancel}
+            onContextMenu={handleContextMenu}
+            onClickCapture={handleClickCapture}
+            className="wb-toggle-item h-8 sm:h-9 w-full px-1 text-xs font-bold leading-tight select-none touch-manipulation sm:text-sm"
+          >
+            <span className="truncate">{t(modelLabelKey(model))}</span>
+          </ToggleGroupItem>
+        </div>
+      </TooltipTrigger>
+      <TooltipContent
+        side="top"
+        align="center"
+        sideOffset={6}
+        collisionPadding={8}
+        className="wb-model-tooltip z-50 max-w-[220px] rounded-lg border border-[#26264A] bg-[#26264A] px-2.5 py-1.5 text-white shadow-md text-left"
+      >
+        <div className="flex flex-col gap-0.5 select-none">
+          <p className="text-xs font-medium leading-snug text-white">
+            {t(modelIntroKey(model))}
+          </p>
+          <p className="text-[11px] font-bold text-[#FFD23F]">
+            {modelEstimatedDurationText(model, t)}
+          </p>
+        </div>
+      </TooltipContent>
+    </Tooltip>
+  )
 }
 
 export function ControlPanel({
@@ -361,27 +507,22 @@ export function ControlPanel({
             </ToggleGroup>
           </div>
 
-          {/* 模型切换：五款模型，选中深蓝底黄字 */}
+          {/* 模型切换：九款模型，选中深蓝底黄字 */}
           <div className="flex flex-col gap-1.5">
-            <ToggleGroup
-              type="single"
-              value={model}
-              onValueChange={(val) => {
-                if (val) onModelChange(val as GenerationModel)
-              }}
-              className="flex w-full flex-wrap gap-1.5 sm:gap-2"
-            >
-              {MODEL_OPTIONS.map((item) => (
-                <ToggleGroupItem
-                  key={item}
-                  value={item}
-                  aria-label={t(modelLabelKey(item))}
-                  className="wb-toggle-item h-9 flex-1 min-w-[70px] px-2 text-xs font-bold sm:text-sm"
-                >
-                  {t(modelLabelKey(item))}
-                </ToggleGroupItem>
-              ))}
-            </ToggleGroup>
+            <TooltipProvider delayDuration={150} disableHoverableContent>
+              <ToggleGroup
+                type="single"
+                value={model}
+                onValueChange={(val) => {
+                  if (val) onModelChange(val as GenerationModel)
+                }}
+                className="grid w-full grid-cols-3 gap-1.5 sm:gap-2"
+              >
+                {MODEL_OPTIONS.map((item) => (
+                  <ModelOptionItem key={item} model={item} />
+                ))}
+              </ToggleGroup>
+            </TooltipProvider>
           </div>
         </div>
       </div>

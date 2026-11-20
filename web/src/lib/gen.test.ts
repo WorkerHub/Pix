@@ -5,8 +5,10 @@ import {
   appendHistoryItems,
   calcEstimatedProgress,
   clearStoredJob,
+  deriveMachineStatus,
   elapsedSeconds,
   estimatedGenDurationSec,
+  formatEstimatedDuration,
   formatHistoryDate,
   formatHistoryDuration,
   formatHistoryMeta,
@@ -15,9 +17,11 @@ import {
   GEN_POLL_INTERVAL_MS,
   GEN_PROGRESS_CAP,
   GEN_TIMEOUT_MS,
+  HEALTH_POLL_INTERVAL_MS,
   HISTORY_POLL_DELAYS,
   isTimedOut,
   mergeHistoryItems,
+  modelEstimatedDurationText,
   readStoredJob,
   writeStoredJob
 } from "@/lib/gen"
@@ -130,13 +134,43 @@ describe("gen helpers", () => {
   })
 
   describe("estimatedGenDurationSec & calcEstimatedProgress", () => {
-    it("预估时长按模型分两档", () => {
+    it("预估时长按模型分两档（共 9 款模型）", () => {
+      // 写实·极速 100 秒
       expect(estimatedGenDurationSec("realistic-lcm")).toBe(100)
+
+      // 其余 8 款模型均为 250 秒
       expect(estimatedGenDurationSec("realistic")).toBe(250)
       expect(estimatedGenDurationSec("majicmix")).toBe(250)
+      expect(estimatedGenDurationSec("photon")).toBe(250)
+      expect(estimatedGenDurationSec("cyberrealistic")).toBe(250)
       expect(estimatedGenDurationSec("dreamshaper")).toBe(250)
+      expect(estimatedGenDurationSec("openjourney")).toBe(250)
       expect(estimatedGenDurationSec("counterfeit")).toBe(250)
+      expect(estimatedGenDurationSec("toonyou")).toBe(250)
+
+      // 未知或未指定回落 250 秒
       expect(estimatedGenDurationSec(undefined)).toBe(250)
+    })
+
+    it("预估时长文案格式化符合规范", async () => {
+      await i18n.changeLanguage("zh")
+      expect(formatEstimatedDuration(100, i18n.t)).toBe("预计约 100 秒")
+      expect(formatEstimatedDuration(250, i18n.t)).toBe("预计约 4 分钟")
+      expect(modelEstimatedDurationText("realistic-lcm", i18n.t)).toBe(
+        "预计约 100 秒"
+      )
+      expect(modelEstimatedDurationText("realistic", i18n.t)).toBe(
+        "预计约 4 分钟"
+      )
+      expect(modelEstimatedDurationText("photon", i18n.t)).toBe("预计约 4 分钟")
+      expect(modelEstimatedDurationText("toonyou", i18n.t)).toBe(
+        "预计约 4 分钟"
+      )
+
+      await i18n.changeLanguage("en")
+      expect(formatEstimatedDuration(100, i18n.t)).toBe("About 100 seconds")
+      expect(formatEstimatedDuration(250, i18n.t)).toBe("About 4 minutes")
+      await i18n.changeLanguage("zh")
     })
 
     it("进度估算初始为 0，单调递增且封顶 95%", () => {
@@ -375,6 +409,138 @@ describe("gen helpers", () => {
           `#103 · ${expectedDate} · custom-special-model · 45秒`
         )
       })
+    })
+  })
+
+  describe("deriveMachineStatus 与 HEALTH_POLL_INTERVAL_MS", () => {
+    it("轮询间隔为 15 秒", () => {
+      expect(HEALTH_POLL_INTERVAL_MS).toBe(15000)
+    })
+
+    it("有任务生成中/提交中/机器忙碌时，状态判定为 busy", () => {
+      expect(
+        deriveMachineStatus({
+          phase: "submitting",
+          healthInFlight: false,
+          machineHealth: "connected"
+        })
+      ).toBe("busy")
+
+      expect(
+        deriveMachineStatus({
+          phase: "generating",
+          healthInFlight: false,
+          machineHealth: "connected"
+        })
+      ).toBe("busy")
+
+      expect(
+        deriveMachineStatus({
+          phase: "busy",
+          healthInFlight: false,
+          machineHealth: "connected"
+        })
+      ).toBe("busy")
+
+      // 生成中即便有健康请求在途也恒为 busy
+      expect(
+        deriveMachineStatus({
+          phase: "generating",
+          healthInFlight: true,
+          machineHealth: "offline"
+        })
+      ).toBe("busy")
+    })
+
+    it("健康检查在途或机器处于冷启动唤醒期时，状态判定为 connecting", () => {
+      // 健康检查请求在途
+      expect(
+        deriveMachineStatus({
+          phase: "idle",
+          healthInFlight: true,
+          machineHealth: "connected"
+        })
+      ).toBe("connecting")
+
+      // 机器处于 starting 唤醒等待期
+      expect(
+        deriveMachineStatus({
+          phase: "starting",
+          healthInFlight: false,
+          machineHealth: "starting"
+        })
+      ).toBe("connecting")
+
+      expect(
+        deriveMachineStatus({
+          phase: "idle",
+          healthInFlight: false,
+          machineHealth: "starting"
+        })
+      ).toBe("connecting")
+    })
+
+    it("健康检查失败或机器不可达时，状态判定为 offline", () => {
+      expect(
+        deriveMachineStatus({
+          phase: "offline",
+          healthInFlight: false,
+          machineHealth: "offline"
+        })
+      ).toBe("offline")
+
+      expect(
+        deriveMachineStatus({
+          phase: "idle",
+          healthInFlight: false,
+          machineHealth: "offline"
+        })
+      ).toBe("offline")
+
+      // 出图后如果健康检查发现离线，指示器为 offline
+      expect(
+        deriveMachineStatus({
+          phase: "done",
+          healthInFlight: false,
+          machineHealth: "offline"
+        })
+      ).toBe("offline")
+    })
+
+    it("健康检查通过且空闲时，状态判定为 connected", () => {
+      expect(
+        deriveMachineStatus({
+          phase: "idle",
+          healthInFlight: false,
+          machineHealth: "connected"
+        })
+      ).toBe("connected")
+
+      // 出图后正常健康通过，状态判定为 connected
+      expect(
+        deriveMachineStatus({
+          phase: "done",
+          healthInFlight: false,
+          machineHealth: "connected"
+        })
+      ).toBe("connected")
+
+      // 超时或错误提示态，机器空闲且就绪时也为 connected
+      expect(
+        deriveMachineStatus({
+          phase: "timeout",
+          healthInFlight: false,
+          machineHealth: "connected"
+        })
+      ).toBe("connected")
+
+      expect(
+        deriveMachineStatus({
+          phase: "error",
+          healthInFlight: false,
+          machineHealth: "connected"
+        })
+      ).toBe("connected")
     })
   })
 })

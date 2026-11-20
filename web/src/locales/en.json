@@ -202,9 +202,26 @@
       "realistic-lcm": "Realistic Turbo",
       "realistic": "Realistic",
       "majicmix": "Portrait East",
+      "photon": "Portrait Photon",
+      "cyberrealistic": "Realistic Doc",
       "dreamshaper": "Dream",
-      "counterfeit": "Anime"
+      "openjourney": "Journey",
+      "counterfeit": "Anime",
+      "toonyou": "Cartoon"
     },
+    "modelIntro": {
+      "realistic-lcm": "Realistic Vision with LCM merge, 8-step lightning generation",
+      "realistic": "Original Realistic Vision photorealism",
+      "majicmix": "majicMIX realistic v7, East Asian realistic portraits",
+      "photon": "Photon v1, Photorealistic portraits with delicate skin and lighting",
+      "cyberrealistic": "CyberRealistic v3.2, Versatile photorealism for steady portraits and landscapes",
+      "dreamshaper": "DreamShaper 8, Dreamy and soft versatile art style",
+      "openjourney": "OpenJourney v4, Midjourney-inspired illustration style",
+      "counterfeit": "Counterfeit-V3.0, 2D anime style",
+      "toonyou": "ToonYou alpha3, Pure cartoon style with crisp outlines"
+    },
+    "estimatedTimeSeconds": "About {{seconds}} seconds",
+    "estimatedTimeMinutes": "About {{minutes}} minutes",
     "submit": "Generate",
     "submitting": "Submitting…",
     "generating": "Generating",
@@ -217,7 +234,13 @@
     "jobNotFound": "Job not found or expired",
     "timeout": "Generation timed out",
     "recheckOnce": "Check again",
-    "regenerate": "Regenerate"
+    "regenerate": "Regenerate",
+    "machineStatus": {
+      "connected": "Connected",
+      "busy": "Busy",
+      "connecting": "Connecting",
+      "offline": "Offline"
+    }
   },
   "history": {
     "title": "History",

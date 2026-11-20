@@ -202,9 +202,26 @@
       "realistic-lcm": "写实·极速",
       "realistic": "写实·原版",
       "majicmix": "人像·东方",
+      "photon": "人像·光子",
+      "cyberrealistic": "写实·纪实",
       "dreamshaper": "通用·梦境",
-      "counterfeit": "动漫"
+      "openjourney": "插画·旅程",
+      "counterfeit": "动漫",
+      "toonyou": "卡通"
     },
+    "modelIntro": {
+      "realistic-lcm": "Realistic Vision 加 LCM 合并，8 步极速出图",
+      "realistic": "Realistic Vision 原版写实",
+      "majicmix": "majicMIX realistic v7，东方人像",
+      "photon": "Photon v1 人像写实，肤质与光影细腻",
+      "cyberrealistic": "CyberRealistic v3.2，通用写实，人物风景都稳",
+      "dreamshaper": "DreamShaper 8，梦幻柔和的通用画风",
+      "openjourney": "OpenJourney v4，Midjourney 风插画感",
+      "counterfeit": "Counterfeit-V3.0，二次元动漫",
+      "toonyou": "ToonYou alpha3，纯卡通画风，线条明快"
+    },
+    "estimatedTimeSeconds": "预计约 {{seconds}} 秒",
+    "estimatedTimeMinutes": "预计约 {{minutes}} 分钟",
     "submit": "生成",
     "submitting": "提交中…",
     "generating": "生成中",
@@ -217,7 +234,13 @@
     "jobNotFound": "任务不存在或已失效",
     "timeout": "生成超时",
     "recheckOnce": "再查一次",
-    "regenerate": "重新生成"
+    "regenerate": "重新生成",
+    "machineStatus": {
+      "connected": "已连接",
+      "busy": "忙碌",
+      "connecting": "连接中",
+      "offline": "离线"
+    }
   },
   "history": {
     "title": "生成历史",
