@@ -360,6 +360,103 @@ describe("卡通风格生图页（并入 #14 历史区）", () => {
     })
   })
 
+  it("首屏防误显超时：挂载时若存在已超时残留 job，清除存储并保持空闲态", async () => {
+    // 模拟上一会话遗留的旧任务（如 15 分钟前提交，早已超时）
+    const staleTime = Date.now() - 15 * 60 * 1000
+    writeStoredJob({
+      jobId: "job-stale-timeout",
+      prompt: "上一会话遗留提示词",
+      size: "square",
+      submittedAt: staleTime
+    })
+
+    renderPage()
+
+    // 1. 首屏不得出现「生成超时」或「再查一次」
+    expect(screen.queryByText("生成超时")).not.toBeInTheDocument()
+    expect(
+      screen.queryByRole("button", { name: "再查一次" })
+    ).not.toBeInTheDocument()
+
+    // 2. 画布处于正常待机态（PIX 字标）
+    expect(screen.getByText("PIX")).toBeInTheDocument()
+
+    // 3. 提示词不强制回填旧残留，保持空白可直接输入
+    const textarea = screen.getByPlaceholderText("提示词")
+    expect(textarea).toHaveValue("")
+    expect(screen.getByRole("button", { name: "生成" })).toBeDisabled()
+
+    // 4. 残留存储已被自动清理，避免后续刷新再次受影响
+    expect(localStorage.getItem(GEN_JOB_STORAGE_KEY)).toBeNull()
+
+    // 5. 触发了健康检查且未发起过期任务的单次状态查询
+    expect(genApi.health).toHaveBeenCalled()
+    expect(genApi.status).not.toHaveBeenCalled()
+  })
+
+  it("已完成任务自动清理存储：轮询出图完成后清空存储，再次进入首屏为空闲态且历史条可见", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    const completedItem: GenerationHistoryItem = {
+      id: 201,
+      job_id: "job-done-cleanup",
+      model: "realistic-lcm",
+      prompt_original: "已完成的图",
+      prompt_effective: "finished image",
+      size: "portrait",
+      created_at: "2026-11-20T10:00:00Z",
+      imageUrl: "/api/gen/history/201/image"
+    }
+
+    vi.mocked(genApi.submit).mockResolvedValue({ jobId: "job-done-cleanup" })
+    vi.mocked(genApi.status).mockResolvedValue({ state: "done" })
+    vi.mocked(genApi.history).mockResolvedValue({
+      items: [completedItem],
+      total: 1,
+      page: 1,
+      pageSize: 12,
+      totalPages: 1
+    })
+
+    const { unmount } = renderPage()
+
+    // 提交生图并进入 done 态
+    const textarea = screen.getByPlaceholderText("提示词")
+    fireEvent.change(textarea, { target: { value: "已完成的图" } })
+    fireEvent.click(screen.getByRole("button", { name: "生成" }))
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "生成中" })).toBeInTheDocument()
+    })
+
+    // 推进 5 秒出图
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(5000)
+    })
+
+    await waitFor(() => {
+      const output = screen.getByTestId("gen-output")
+      expect(output.querySelector("img")).toHaveAttribute(
+        "src",
+        "/api/gen/image/job-done-cleanup"
+      )
+    })
+
+    // 出图后存储已被清除
+    expect(localStorage.getItem(GEN_JOB_STORAGE_KEY)).toBeNull()
+
+    // 卸载并模拟用户「关闭页面后再次进入生图页」
+    unmount()
+    vi.useRealTimers()
+
+    renderPage()
+
+    // 再次进入：画布为空闲待机态，绝不误显「生成超时」，历史条正常可见
+    expect(screen.queryByText("生成超时")).not.toBeInTheDocument()
+    expect(screen.getByText("PIX")).toBeInTheDocument()
+    expect(await screen.findByText("#201")).toBeInTheDocument()
+    expect(screen.getByText("已完成的图")).toBeInTheDocument()
+  })
+
   it("历史区：展示历史卡片、原图灯箱查看、下载链接与删除确认", async () => {
     vi.mocked(genApi.history).mockResolvedValue({
       items: mockHistoryItems,
