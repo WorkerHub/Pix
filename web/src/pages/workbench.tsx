@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { useTranslation } from "react-i18next"
 import { Canvas } from "@/components/workbench/canvas"
 import { ControlPanel } from "@/components/workbench/control-panel"
@@ -15,14 +15,17 @@ import {
 import {
   appendHistoryItems,
   clearStoredJob,
+  deriveMachineStatus,
   elapsedSeconds,
   GEN_POLL_INTERVAL_MS,
+  HEALTH_POLL_INTERVAL_MS,
   HISTORY_POLL_DELAYS,
   isTimedOut,
   mergeHistoryItems,
   readStoredJob,
   writeStoredJob,
-  type GenPhase
+  type GenPhase,
+  type MachineStatus
 } from "@/lib/gen"
 
 /**
@@ -39,6 +42,19 @@ export function WorkbenchPage() {
   const [submittedAt, setSubmittedAt] = useState<number | null>(null)
   const [elapsed, setElapsed] = useState(0)
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
+
+  // 机器健康与连接状态指示（四态：已连接、忙碌、连接中、离线）
+  const [machineHealth, setMachineHealth] = useState<
+    "connected" | "starting" | "offline"
+  >("connected")
+  const [healthInFlight, setHealthInFlight] = useState<boolean>(() => {
+    const stored = readStoredJob()
+    return !stored || isTimedOut(stored.submittedAt)
+  })
+
+  const machineStatus: MachineStatus = useMemo(() => {
+    return deriveMachineStatus({ phase, healthInFlight, machineHealth })
+  }, [phase, healthInFlight, machineHealth])
 
   // 历史记录状态
   const [historyItems, setHistoryItems] = useState<GenerationHistoryItem[]>([])
@@ -195,9 +211,11 @@ export function WorkbenchPage() {
    * - 绝不覆盖生成中、完成、超时等已有任务状态。
    */
   const checkHealth = useCallback(async (): Promise<boolean> => {
+    setHealthInFlight(true)
     try {
       const res = await genApi.health()
       if (!res.online) {
+        setMachineHealth("offline")
         setPhase((prev) =>
           prev === "idle" || prev === "offline" || prev === "starting"
             ? "offline"
@@ -206,22 +224,27 @@ export function WorkbenchPage() {
         return false
       }
       if (res.ready === false) {
+        setMachineHealth("starting")
         setPhase((prev) =>
           prev === "idle" || prev === "offline" ? "starting" : prev
         )
         return false
       }
+      setMachineHealth("connected")
       setPhase((prev) =>
         prev === "offline" || prev === "starting" ? "idle" : prev
       )
       return true
     } catch {
+      setMachineHealth("offline")
       setPhase((prev) =>
         prev === "idle" || prev === "offline" || prev === "starting"
           ? "offline"
           : prev
       )
       return false
+    } finally {
+      setHealthInFlight(false)
     }
   }, [])
 
@@ -231,6 +254,7 @@ export function WorkbenchPage() {
       if (isTimedOut(timestamp)) {
         setPhase("timeout")
         clearStoredJob()
+        void checkHealth()
         return
       }
 
@@ -244,12 +268,14 @@ export function WorkbenchPage() {
           setPhase("done")
           refreshHistory(currentJobId)
           clearStoredJob()
+          void checkHealth()
           return
         }
         if (res.state === "error") {
           setPhase("error")
           setErrorMessage(t("generate.error"))
           clearStoredJob()
+          void checkHealth()
           return
         }
         // state === "running" | "queued"
@@ -260,18 +286,21 @@ export function WorkbenchPage() {
             setPhase("error")
             setErrorMessage(t("generate.jobNotFound"))
             clearStoredJob()
+            void checkHealth()
             return
           }
           if (err.status === 502 || err.status === 0) {
+            setMachineHealth("offline")
             setPhase("offline")
             return
           }
         }
         setPhase("error")
         setErrorMessage(describeApiError(t, err))
+        void checkHealth()
       }
     },
-    [t, refreshHistory]
+    [t, refreshHistory, checkHealth]
   )
 
   /** 挂载：初始化、恢复 localStorage 任务与拉取历史 */
@@ -315,6 +344,7 @@ export function WorkbenchPage() {
       if (isTimedOut(submittedAt)) {
         setPhase("timeout")
         clearStoredJob()
+        void checkHealth()
       }
     }, 1000)
 
@@ -326,30 +356,64 @@ export function WorkbenchPage() {
       clearInterval(timerInterval)
       clearInterval(pollInterval)
     }
-  }, [phase, submittedAt, jobId, checkJobStatus])
+  }, [phase, submittedAt, jobId, checkJobStatus, checkHealth])
 
-  /** 前后台切换处理 */
+  /**
+   * 机器健康状态 15 秒轮询与前后台切换处理：
+   * - 页面挂载时及每次生成结束后各查一次；
+   * - 其间每 15 秒轮询一次健康检查；
+   * - 页面切到后台时暂停轮询；
+   * - 切回前台立即补查一次健康检查并恢复轮询。
+   */
   useEffect(() => {
-    const handleVisibilityChange = () => {
-      if (document.visibilityState === "visible") {
-        if (phaseRef.current !== "done") {
+    let pollTimer: ReturnType<typeof setInterval> | null = null
+
+    const startHealthPoll = () => {
+      if (pollTimer) clearInterval(pollTimer)
+      pollTimer = setInterval(() => {
+        if (document.visibilityState === "visible") {
           void checkHealth()
         }
+      }, HEALTH_POLL_INTERVAL_MS)
+    }
+
+    const stopHealthPoll = () => {
+      if (pollTimer) {
+        clearInterval(pollTimer)
+        pollTimer = null
+      }
+    }
+
+    // 生成中锁定忙碌状态，暂停 15 秒健康轮询（生成中由 5 秒任务状态轮询负责）
+    const isGenerating = phase === "submitting" || phase === "generating"
+    if (!isGenerating && document.visibilityState === "visible") {
+      startHealthPoll()
+    }
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "visible") {
         if (
           phaseRef.current === "generating" &&
           jobIdRef.current &&
           submittedAtRef.current
         ) {
           void checkJobStatus(jobIdRef.current, submittedAtRef.current)
+        } else if (phaseRef.current !== "submitting") {
+          void checkHealth()
+          startHealthPoll()
         }
+      } else {
+        stopHealthPoll()
       }
     }
 
     document.addEventListener("visibilitychange", handleVisibilityChange)
+
     return () => {
+      stopHealthPoll()
       document.removeEventListener("visibilitychange", handleVisibilityChange)
     }
-  }, [checkHealth, checkJobStatus])
+  }, [phase, checkHealth, checkJobStatus])
 
   /** 提交生图 */
   const handleSubmit = async (e?: React.FormEvent) => {
@@ -359,7 +423,8 @@ export function WorkbenchPage() {
       !trimmed ||
       phase === "submitting" ||
       phase === "generating" ||
-      phase === "offline"
+      phase === "offline" ||
+      machineStatus === "offline"
     ) {
       return
     }
@@ -394,35 +459,43 @@ export function WorkbenchPage() {
       }
 
       if ("ready" in res && res.ready === false) {
+        setMachineHealth("starting")
         setPhase("starting")
         return
       }
 
       if ("online" in res && res.online === false) {
+        setMachineHealth("offline")
         setPhase("offline")
         return
       }
 
       setPhase("error")
       setErrorMessage(t("generate.error"))
+      void checkHealth()
     } catch (err) {
       if (err instanceof ApiError && (err.status === 502 || err.status === 0)) {
+        setMachineHealth("offline")
         setPhase("offline")
         return
       }
       setPhase("error")
       setErrorMessage(describeApiError(t, err))
+      void checkHealth()
     }
   }
 
   /** 离线态或启动态「重新检查」按钮点击 */
   const handleRecheckHealth = async () => {
+    setHealthInFlight(true)
     try {
       const res = await genApi.health()
       if (res.online) {
         if (res.ready === false) {
+          setMachineHealth("starting")
           setPhase("starting")
         } else {
+          setMachineHealth("connected")
           if (
             jobIdRef.current &&
             submittedAtRef.current &&
@@ -434,9 +507,15 @@ export function WorkbenchPage() {
             setPhase("idle")
           }
         }
+      } else {
+        setMachineHealth("offline")
+        setPhase("offline")
       }
     } catch {
+      setMachineHealth("offline")
       // 保持 offline
+    } finally {
+      setHealthInFlight(false)
     }
   }
 
@@ -453,12 +532,14 @@ export function WorkbenchPage() {
         setPhase("done")
         refreshHistory(jobId)
         clearStoredJob()
+        void checkHealth()
         return
       }
       if (res.state === "error") {
         setPhase("error")
         setErrorMessage(t("generate.error"))
         clearStoredJob()
+        void checkHealth()
         return
       }
     } catch (err) {
@@ -467,15 +548,18 @@ export function WorkbenchPage() {
           setPhase("error")
           setErrorMessage(t("generate.jobNotFound"))
           clearStoredJob()
+          void checkHealth()
           return
         }
         if (err.status === 502 || err.status === 0) {
+          setMachineHealth("offline")
           setPhase("offline")
           return
         }
       }
       setPhase("error")
       setErrorMessage(describeApiError(t, err))
+      void checkHealth()
     }
   }
 
@@ -504,6 +588,7 @@ export function WorkbenchPage() {
             model={model}
             elapsed={elapsed}
             errorMessage={errorMessage ?? ""}
+            machineStatus={machineStatus}
             onRecheckHealth={handleRecheckHealth}
             onCheckOnce={handleCheckOnce}
             onRegenerate={handleRegenerate}
@@ -529,7 +614,7 @@ export function WorkbenchPage() {
           onModelChange={setModel}
           submitting={phase === "submitting"}
           generating={phase === "generating"}
-          offline={phase === "offline"}
+          offline={phase === "offline" || machineStatus === "offline"}
           onSubmit={() => void handleSubmit()}
           className="shrink-0 lg:h-full"
         />

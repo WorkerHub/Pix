@@ -1,7 +1,11 @@
 import { useTranslation } from "react-i18next"
 import { genImageUrl } from "@/lib/api"
 import type { GenerationModel } from "@/lib/api-types"
-import { calcEstimatedProgress, type GenPhase } from "@/lib/gen"
+import {
+  calcEstimatedProgress,
+  type GenPhase,
+  type MachineStatus
+} from "@/lib/gen"
 import { cn } from "cn"
 
 interface CanvasProps {
@@ -11,6 +15,7 @@ interface CanvasProps {
   model?: GenerationModel
   elapsed: number
   errorMessage: string
+  machineStatus?: MachineStatus
   onRecheckHealth: () => void
   onCheckOnce: () => void
   onRegenerate: () => void
@@ -24,6 +29,7 @@ export function Canvas({
   model,
   elapsed,
   errorMessage,
+  machineStatus = "connected",
   onRecheckHealth,
   onCheckOnce,
   onRegenerate,
@@ -42,6 +48,26 @@ export function Canvas({
       )}
     >
       <div className="wb-canvas-screen relative flex h-full w-full flex-1 min-h-0 items-center justify-center p-4 text-white">
+        {/* 机器连接状态指示器：屏幕区右上角，小圆点 + 短标签，不占版面、页面仍一屏不滚动 */}
+        <div
+          data-testid="machine-status"
+          data-status={machineStatus}
+          className="pointer-events-none absolute top-3 right-3 z-10 flex select-none items-center gap-1.5 rounded-full border border-[#26264A]/60 bg-[#1E1E3F]/80 px-2.5 py-1 text-xs font-semibold text-white/90 shadow-sm backdrop-blur-sm sm:top-4 sm:right-4"
+        >
+          <span
+            data-testid="machine-status-dot"
+            className={cn(
+              "h-2 w-2 rounded-full",
+              machineStatus === "connected" && "bg-[#2FE0C8]",
+              machineStatus === "busy" && "bg-[#FFD23F] animate-pulse",
+              machineStatus === "connecting" && "bg-[#38BDF8] animate-pulse",
+              machineStatus === "offline" && "bg-[#F43F5E]"
+            )}
+          />
+          <span data-testid="machine-status-label">
+            {t(`generate.machineStatus.${machineStatus}`)}
+          </span>
+        </div>
         {/* 待机态：居中卡通字标 */}
         {phase === "idle" && (
           <div className="flex flex-col items-center justify-center select-none">
