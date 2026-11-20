@@ -165,7 +165,7 @@ function ModelOptionItem({ model }: ModelOptionItemProps) {
         align="center"
         sideOffset={6}
         collisionPadding={8}
-        className="wb-model-tooltip z-50 max-w-[220px] rounded-lg border border-[#26264A] bg-[#26264A] px-2.5 py-1.5 text-white shadow-md text-left"
+        className="wb-model-tooltip z-50 w-[270px] max-w-[calc(100vw-1rem)] rounded-lg border border-[#26264A] bg-[#26264A] px-2.5 py-1.5 text-left text-white shadow-md"
       >
         <div className="flex flex-col gap-0.5 select-none">
           <p className="text-xs font-medium leading-snug text-white">
