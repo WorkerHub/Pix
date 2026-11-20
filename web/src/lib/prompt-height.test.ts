@@ -3,10 +3,14 @@ import { GEN_JOB_STORAGE_KEY } from "@/lib/gen"
 import {
   calculateMaxPromptHeight,
   clampPromptHeight,
+  CONTROL_PANEL_REST_HEIGHT_DEFAULT,
+  DEFAULT_HISTORY_STRIP_HEIGHT,
+  estimateInitialMaxPromptHeight,
   MIN_CANVAS_HEIGHT,
   PROMPT_HEIGHT_DEFAULT,
   PROMPT_HEIGHT_MIN,
   PROMPT_HEIGHT_STORAGE_KEY,
+  PROMPT_RESIZE_HANDLE_HEIGHT,
   readStoredPromptHeight,
   writeStoredPromptHeight
 } from "@/lib/prompt-height"
@@ -76,6 +80,14 @@ describe("提示词高度与持久化控制 (prompt-height)", () => {
       expect(readStoredPromptHeight()).toBe(PROMPT_HEIGHT_MIN)
     })
 
+    it("readStoredPromptHeight 支持传入上限，读取过大值时立即钳制，杜绝首帧渲染闪烁", () => {
+      localStorage.setItem(PROMPT_HEIGHT_STORAGE_KEY, "500")
+      // 传入上限 200
+      expect(readStoredPromptHeight(200)).toBe(200)
+      // 未传上限时返回原始值
+      expect(readStoredPromptHeight()).toBe(500)
+    })
+
     it("操作提示词高度不影响生图任务 app-gen-job 数据", () => {
       localStorage.setItem(
         GEN_JOB_STORAGE_KEY,
@@ -89,41 +101,92 @@ describe("提示词高度与持久化控制 (prompt-height)", () => {
   })
 
   describe("calculateMaxPromptHeight 动态上限计算", () => {
-    it("桌面端：根据控制面板高度与其余控件占高计算可用上限", () => {
-      // 假设面板高 700px，其余控件占高 280px
+    it("桌面端：精确扣除手柄高度、其余控件、间距与内边距，确保生成按钮不被裁切", () => {
+      // 实际真实尺寸模型：
+      // restControlsHeight = 92, submitBtnHeight = 48, handleHeight = 14
+      // panelPadBorder = 46, gaps (4 + 12 + 16) = 32
+      // restHeight = 46 + 32 + 14 + 92 + 48 = 232px
+      const panelPadBorder = 46
+      const internalGaps = 32
+      const handleHeight = PROMPT_RESIZE_HANDLE_HEIGHT // 14
+      const restControlsHeight = 92
+      const submitBtnHeight = 48
+      const restHeight =
+        panelPadBorder +
+        internalGaps +
+        handleHeight +
+        restControlsHeight +
+        submitBtnHeight
+      expect(restHeight).toBe(232)
+
+      // 面板总高 700px 时，上限 = 700 - 232 = 468px
       const maxH = calculateMaxPromptHeight({
         isDesktop: true,
         rootHeight: 744,
         panelHeight: 700,
-        restHeight: 280
+        restHeight
       })
-      expect(maxH).toBe(420)
+      expect(maxH).toBe(468)
+
+      // 若未纳入手柄 14px，则误算为 482px，导致实际内容超高裁切按钮
+      const buggyRestWithoutHandle =
+        panelPadBorder + internalGaps + restControlsHeight + submitBtnHeight
+      expect(700 - buggyRestWithoutHandle).toBe(482)
+      expect(maxH).toBe(482 - handleHeight)
     })
 
-    it("移动端：页面总高扣除画布最小高度(180px)、间距与其余控件，保持一屏不滚动", () => {
-      // 假设移动端视口内容高 600px，扣除内边距 24px = 576px
-      // 扣除画布 180px 与 gap 12px = 384px 可用面板总高
-      // 扣除其余控件 280px = 104px，由于低于下限 112px，保证不低于下限
-      const maxH = calculateMaxPromptHeight({
-        isDesktop: false,
-        rootHeight: 600,
-        restHeight: 280,
-        minCanvasHeight: MIN_CANVAS_HEIGHT
-      })
-      expect(maxH).toBe(PROMPT_HEIGHT_MIN)
-    })
-
-    it("较长移动端屏幕（如 800px）有合理的增高空间", () => {
-      // 800px 扣除 24 = 776px
-      // 776 - 180 - 12 = 584px
-      // 584 - 280 = 304px
+    it("移动端：精确扣除历史条实测高度、画布核心最小高度(180px)、两处容器间距与视口内边距", () => {
+      // 已知输入条件：
+      // rootHeight = 800, sm 内边距 = 32
+      // minCanvasHeight = 180, historyStripHeight = 150, MOBILE_VERTICAL_GAPS = 24
+      // restHeight = 232 (包含其余控件、按钮与手柄)
+      // 计算过程：
+      // 1. effectiveRoot = 800 - 32 = 768px
+      // 2. availablePanelHeight = 768 - 180 - 150 - 24 = 414px
+      // 3. maxPromptHeight = 414 - 232 = 182px
       const maxH = calculateMaxPromptHeight({
         isDesktop: false,
         rootHeight: 800,
-        restHeight: 280,
-        minCanvasHeight: 180
+        rootPaddingY: 32,
+        historyStripHeight: 150,
+        minCanvasHeight: MIN_CANVAS_HEIGHT,
+        restHeight: 232
       })
-      expect(maxH).toBe(304)
+      expect(maxH).toBe(182)
+
+      // 验证当 promptHeight 达到该上限时，画布高度恰好严格等于 180px
+      const totalPanelHeight = 182 + 232 // 414px
+      const remainingForCanvas = 768 - 24 - 150 - totalPanelHeight
+      expect(remainingForCanvas).toBe(MIN_CANVAS_HEIGHT)
+    })
+
+    it("移动端历史条不同高度(如 160px)时，上限自适应扣减历史条增量", () => {
+      // 768 - 180 - 160 - 24 = 404
+      // 404 - 232 = 172
+      const maxH = calculateMaxPromptHeight({
+        isDesktop: false,
+        rootHeight: 800,
+        rootPaddingY: 32,
+        historyStripHeight: 160,
+        minCanvasHeight: 180,
+        restHeight: 232
+      })
+      expect(maxH).toBe(172)
+    })
+
+    it("移动端历史条与其余控件占满小视口时，上限安全回落至下限 112px", () => {
+      // effectiveRoot = 600 - 24 = 576px
+      // 576 - 180 - 150 - 24 = 222px availablePanel
+      // 222 - 280 = -58px < 112px
+      const maxH = calculateMaxPromptHeight({
+        isDesktop: false,
+        rootHeight: 600,
+        rootPaddingY: 24,
+        historyStripHeight: DEFAULT_HISTORY_STRIP_HEIGHT,
+        restHeight: CONTROL_PANEL_REST_HEIGHT_DEFAULT,
+        minCanvasHeight: MIN_CANVAS_HEIGHT
+      })
+      expect(maxH).toBe(PROMPT_HEIGHT_MIN)
     })
 
     it("视口过小或计算结果异常时，上限始终不低于下限", () => {
@@ -134,6 +197,37 @@ describe("提示词高度与持久化控制 (prompt-height)", () => {
         restHeight: 280
       })
       expect(maxH).toBe(PROMPT_HEIGHT_MIN)
+    })
+  })
+
+  describe("estimateInitialMaxPromptHeight 首帧防闪烁预估", () => {
+    it("在桌面端估算结果满足合理区间", () => {
+      const origWidth = window.innerWidth
+      const origHeight = window.innerHeight
+
+      window.innerWidth = 1200
+      window.innerHeight = 900
+      const est = estimateInitialMaxPromptHeight()
+      expect(est).toBeGreaterThanOrEqual(PROMPT_HEIGHT_MIN)
+      expect(est).toBeLessThanOrEqual(900)
+
+      window.innerWidth = origWidth
+      window.innerHeight = origHeight
+    })
+
+    it("在移动端小屏估算结果受画布和历史条保护，不输出过大值", () => {
+      const origWidth = window.innerWidth
+      const origHeight = window.innerHeight
+
+      window.innerWidth = 375
+      window.innerHeight = 667
+      const est = estimateInitialMaxPromptHeight()
+      expect(est).toBeGreaterThanOrEqual(PROMPT_HEIGHT_MIN)
+      // 667 - 56 (nav) - 24 (pad) = 587; 587 - 180 - 150 - 24 - 280 = -51 -> 112
+      expect(est).toBe(PROMPT_HEIGHT_MIN)
+
+      window.innerWidth = origWidth
+      window.innerHeight = origHeight
     })
   })
 })

@@ -11,8 +11,10 @@ import {
   calculateMaxPromptHeight,
   clampPromptHeight,
   CONTROL_PANEL_REST_HEIGHT_DEFAULT,
+  estimateInitialMaxPromptHeight,
   MIN_CANVAS_HEIGHT,
   PROMPT_HEIGHT_MIN,
+  PROMPT_RESIZE_HANDLE_HEIGHT,
   readStoredPromptHeight,
   writeStoredPromptHeight
 } from "@/lib/prompt-height"
@@ -50,11 +52,14 @@ export function ControlPanel({
   const panelRef = useRef<HTMLDivElement>(null)
   const restControlsRef = useRef<HTMLDivElement>(null)
   const submitButtonRef = useRef<HTMLButtonElement>(null)
+  const handleRef = useRef<HTMLDivElement>(null)
 
-  const [promptHeight, setPromptHeight] = useState(() =>
-    readStoredPromptHeight()
+  const [maxPromptHeight, setMaxPromptHeight] = useState(
+    estimateInitialMaxPromptHeight
   )
-  const [maxPromptHeight, setMaxPromptHeight] = useState(600)
+  const [promptHeight, setPromptHeight] = useState(() =>
+    readStoredPromptHeight(estimateInitialMaxPromptHeight())
+  )
 
   const isDraggingRef = useRef(false)
   const dragStartYRef = useRef(0)
@@ -78,13 +83,59 @@ export function ControlPanel({
     const rootHeight = rootEl ? rootEl.clientHeight : window.innerHeight
     const panelHeight = panelEl ? panelEl.clientHeight : 0
 
+    let rootPaddingY: number | undefined
+    if (rootEl && typeof window !== "undefined") {
+      try {
+        const rootStyle = window.getComputedStyle(rootEl)
+        const pt = parseFloat(rootStyle.paddingTop) || 0
+        const pb = parseFloat(rootStyle.paddingBottom) || 0
+        if (pt + pb > 0) {
+          rootPaddingY = pt + pb
+        }
+      } catch {
+        // fallback
+      }
+    }
+
+    let historyStripHeight: number | undefined
+    if (rootEl && !isDesktop) {
+      const historyStripEl =
+        rootEl.querySelector<HTMLElement>(".wb-history-strip")
+      if (historyStripEl && historyStripEl.offsetHeight > 0) {
+        historyStripHeight = historyStripEl.offsetHeight
+      }
+    }
+
     let restHeight = CONTROL_PANEL_REST_HEIGHT_DEFAULT
     if (panelEl && submitButtonRef.current && restControlsRef.current) {
       const submitBtnHeight = submitButtonRef.current.offsetHeight
       const restControlsHeight = restControlsRef.current.offsetHeight
+      const handleHeight =
+        handleRef.current && handleRef.current.offsetHeight > 0
+          ? handleRef.current.offsetHeight
+          : PROMPT_RESIZE_HANDLE_HEIGHT
+
       if (submitBtnHeight > 0 && restControlsHeight > 0) {
-        // 面板 padding + border（约 46px）+ 其余控件区 + 间距（16px * 2）+ 按钮高度
-        restHeight = 46 + restControlsHeight + 16 + submitBtnHeight + 16
+        let panelPadBorder = 46
+        try {
+          const panelStyle = window.getComputedStyle(panelEl)
+          const pt = parseFloat(panelStyle.paddingTop) || 0
+          const pb = parseFloat(panelStyle.paddingBottom) || 0
+          const bt = parseFloat(panelStyle.borderTopWidth) || 0
+          const bb = parseFloat(panelStyle.borderBottomWidth) || 0
+          if (pt + pb + bt + bb > 0) {
+            panelPadBorder = pt + pb + bt + bb
+          }
+        } catch {
+          // fallback 46
+        }
+        // 面板 padding+border (46px) + 手柄高 (handleHeight) + 其余控件区 + 按钮高 + 间隙 (gap-1=4, gap-3=12, gap-4=16，合计 32px)
+        restHeight =
+          panelPadBorder +
+          32 +
+          handleHeight +
+          restControlsHeight +
+          submitBtnHeight
       }
     }
 
@@ -94,7 +145,9 @@ export function ControlPanel({
       panelHeight,
       restHeight,
       minCanvasHeight: MIN_CANVAS_HEIGHT,
-      minPromptHeight: PROMPT_HEIGHT_MIN
+      minPromptHeight: PROMPT_HEIGHT_MIN,
+      historyStripHeight,
+      rootPaddingY
     })
 
     setMaxPromptHeight(calculatedMax)
@@ -124,7 +177,11 @@ export function ControlPanel({
     })
     if (panelRef.current) ro.observe(panelRef.current)
     const rootEl = panelRef.current?.closest(".wb-root")
-    if (rootEl) ro.observe(rootEl)
+    if (rootEl) {
+      ro.observe(rootEl)
+      const historyStripEl = rootEl.querySelector(".wb-history-strip")
+      if (historyStripEl) ro.observe(historyStripEl)
+    }
     return () => {
       ro.disconnect()
     }
@@ -255,6 +312,7 @@ export function ControlPanel({
 
           {/* 输入框下边缘拖拽手柄：用 Pointer Events 实现鼠标+触屏拖动，键盘上下键微调 */}
           <div
+            ref={handleRef}
             role="slider"
             aria-label={t("generate.resizePrompt")}
             aria-orientation="vertical"
