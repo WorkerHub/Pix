@@ -18,7 +18,7 @@ import {
   deriveMachineStatus,
   elapsedSeconds,
   GEN_POLL_INTERVAL_MS,
-  HEALTH_POLL_INTERVAL_MS,
+  HEALTH_INTERACTION_THROTTLE_MS,
   HISTORY_POLL_DELAYS,
   isTimedOut,
   mergeHistoryItems,
@@ -69,6 +69,8 @@ export function WorkbenchPage() {
   jobIdRef.current = jobId
   const submittedAtRef = useRef(submittedAt)
   submittedAtRef.current = submittedAt
+  const lastHealthCheckRef = useRef<number>(0)
+  const healthInFlightRef = useRef<boolean>(false)
 
   // 历史追踪轮询计时器与序列号
   const historyPollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -211,7 +213,10 @@ export function WorkbenchPage() {
    * - 绝不覆盖生成中、完成、超时等已有任务状态。
    */
   const checkHealth = useCallback(async (): Promise<boolean> => {
+    if (healthInFlightRef.current) return false
+    healthInFlightRef.current = true
     setHealthInFlight(true)
+    lastHealthCheckRef.current = Date.now()
     try {
       const res = await genApi.health()
       if (!res.online) {
@@ -244,6 +249,7 @@ export function WorkbenchPage() {
       )
       return false
     } finally {
+      healthInFlightRef.current = false
       setHealthInFlight(false)
     }
   }, [])
@@ -359,37 +365,13 @@ export function WorkbenchPage() {
   }, [phase, submittedAt, jobId, checkJobStatus, checkHealth])
 
   /**
-   * 机器健康状态 15 秒轮询与前后台切换处理：
-   * - 页面挂载时及每次生成结束后各查一次；
-   * - 其间每 15 秒轮询一次健康检查；
-   * - 页面切到后台时暂停轮询；
-   * - 切回前台立即补查一次健康检查并恢复轮询。
+   * 机器健康状态事件驱动检查与前后台切换处理：
+   * 1. 纯事件触发，彻底移除定时器周期轮询（无交互零查询，状态停在最后一次结果）；
+   * 2. 标签页切回前台时立即补查；
+   * 3. 用户交互（鼠标移动、按键、点击、触摸）触发健康检查，全局 5 分钟节流避免连发；
+   * 4. 生成中锁定忙碌，跳过健康检查（由任务自身状态轮询负责）。
    */
   useEffect(() => {
-    let pollTimer: ReturnType<typeof setInterval> | null = null
-
-    const startHealthPoll = () => {
-      if (pollTimer) clearInterval(pollTimer)
-      pollTimer = setInterval(() => {
-        if (document.visibilityState === "visible") {
-          void checkHealth()
-        }
-      }, HEALTH_POLL_INTERVAL_MS)
-    }
-
-    const stopHealthPoll = () => {
-      if (pollTimer) {
-        clearInterval(pollTimer)
-        pollTimer = null
-      }
-    }
-
-    // 生成中锁定忙碌状态，暂停 15 秒健康轮询（生成中由 5 秒任务状态轮询负责）
-    const isGenerating = phase === "submitting" || phase === "generating"
-    if (!isGenerating && document.visibilityState === "visible") {
-      startHealthPoll()
-    }
-
     const handleVisibilityChange = () => {
       if (document.visibilityState === "visible") {
         if (
@@ -400,20 +382,57 @@ export function WorkbenchPage() {
           void checkJobStatus(jobIdRef.current, submittedAtRef.current)
         } else if (phaseRef.current !== "submitting") {
           void checkHealth()
-          startHealthPoll()
         }
-      } else {
-        stopHealthPoll()
       }
+    }
+
+    const handleInteraction = () => {
+      if (
+        typeof document !== "undefined" &&
+        document.visibilityState !== "visible"
+      ) {
+        return
+      }
+
+      const isGenerating =
+        phaseRef.current === "submitting" || phaseRef.current === "generating"
+      if (isGenerating) {
+        return
+      }
+
+      const now = Date.now()
+      if (now - lastHealthCheckRef.current < HEALTH_INTERACTION_THROTTLE_MS) {
+        return
+      }
+
+      void checkHealth()
     }
 
     document.addEventListener("visibilitychange", handleVisibilityChange)
 
-    return () => {
-      stopHealthPoll()
-      document.removeEventListener("visibilitychange", handleVisibilityChange)
+    const interactionOptions: AddEventListenerOptions = {
+      passive: true,
+      capture: true
     }
-  }, [phase, checkHealth, checkJobStatus])
+    const interactionEvents: (keyof WindowEventMap)[] = [
+      "pointerdown",
+      "mousemove",
+      "keydown",
+      "touchstart",
+      "click"
+    ]
+
+    for (const evt of interactionEvents) {
+      window.addEventListener(evt, handleInteraction, interactionOptions)
+    }
+
+    return () => {
+      document.removeEventListener("visibilitychange", handleVisibilityChange)
+      for (const evt of interactionEvents) {
+        window.removeEventListener(evt, handleInteraction, interactionOptions)
+      }
+    }
+  }, [checkHealth, checkJobStatus])
 
   /** 提交生图 */
   const handleSubmit = async (e?: React.FormEvent) => {
@@ -487,6 +506,9 @@ export function WorkbenchPage() {
 
   /** 离线态或启动态「重新检查」按钮点击 */
   const handleRecheckHealth = async () => {
+    if (healthInFlightRef.current) return
+    healthInFlightRef.current = true
+    lastHealthCheckRef.current = Date.now()
     setHealthInFlight(true)
     try {
       const res = await genApi.health()
@@ -515,6 +537,7 @@ export function WorkbenchPage() {
       setMachineHealth("offline")
       // 保持 offline
     } finally {
+      healthInFlightRef.current = false
       setHealthInFlight(false)
     }
   }

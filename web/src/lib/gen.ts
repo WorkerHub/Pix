@@ -25,7 +25,10 @@ export type MachineStatus = "connected" | "busy" | "connecting" | "offline"
 /** 生图任务状态轮询间隔：5 秒 */
 export const GEN_POLL_INTERVAL_MS = 5000
 
-/** 机器健康检查轮询间隔：15 秒 */
+/** 用户交互触发机器健康检查最小节流间隔：5 分钟（300 秒） */
+export const HEALTH_INTERACTION_THROTTLE_MS = 5 * 60 * 1000
+
+/** @deprecated 已在 #40 修订中废弃（改为纯事件驱动与 5 分钟交互节流），仅作兼容性保留 */
 export const HEALTH_POLL_INTERVAL_MS = 15000
 
 export interface MachineStatusOptions {
