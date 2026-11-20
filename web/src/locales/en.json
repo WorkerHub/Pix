@@ -233,7 +233,13 @@
     "jobNotFound": "Job not found or expired",
     "timeout": "Generation timed out",
     "recheckOnce": "Check again",
-    "regenerate": "Regenerate"
+    "regenerate": "Regenerate",
+    "machineStatus": {
+      "connected": "Connected",
+      "busy": "Busy",
+      "connecting": "Connecting",
+      "offline": "Offline"
+    }
   },
   "history": {
     "title": "History",

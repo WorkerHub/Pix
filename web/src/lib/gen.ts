@@ -19,8 +19,44 @@ export type GenPhase =
   | "error"
   | "timeout"
 
-/** 轮询间隔：5 秒 */
+/** 机器连接状态指示四态（纯前端派生展示，不涉及后端契约） */
+export type MachineStatus = "connected" | "busy" | "connecting" | "offline"
+
+/** 生图任务状态轮询间隔：5 秒 */
 export const GEN_POLL_INTERVAL_MS = 5000
+
+/** 机器健康检查轮询间隔：15 秒 */
+export const HEALTH_POLL_INTERVAL_MS = 15000
+
+export interface MachineStatusOptions {
+  phase: GenPhase
+  healthInFlight: boolean
+  machineHealth: "connected" | "starting" | "offline"
+}
+
+/**
+ * 根据生成阶段与健康状态派生机器连接状态（四态）：
+ * 1. 忙碌（busy）：有任务正在提交、生成中或机器报忙；
+ * 2. 连接中（connecting）：健康检查在途/重试中，或机器处于闲置挂起后的唤醒等待期（ready === false）；
+ * 3. 离线（offline）：健康检查失败或机器不可达；
+ * 4. 已连接（connected）：健康检查通过且空闲。
+ */
+export function deriveMachineStatus({
+  phase,
+  healthInFlight,
+  machineHealth
+}: MachineStatusOptions): MachineStatus {
+  if (phase === "submitting" || phase === "generating" || phase === "busy") {
+    return "busy"
+  }
+  if (healthInFlight || machineHealth === "starting" || phase === "starting") {
+    return "connecting"
+  }
+  if (machineHealth === "offline" || phase === "offline") {
+    return "offline"
+  }
+  return "connected"
+}
 
 /** 超时阈值：12 分钟 */
 export const GEN_TIMEOUT_MS = 12 * 60 * 1000
