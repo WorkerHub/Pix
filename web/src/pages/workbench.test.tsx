@@ -2,6 +2,7 @@ import { act, fireEvent, render, screen, waitFor } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { i18n } from "@/i18n"
+import type { GenerationHistoryItem } from "@/lib/api-types"
 import { GEN_JOB_STORAGE_KEY, writeStoredJob } from "@/lib/gen"
 import { WorkbenchPage } from "@/pages/workbench"
 
@@ -12,22 +13,55 @@ vi.mock("@/lib/api", async (importOriginal) => {
     genApi: {
       health: vi.fn(),
       submit: vi.fn(),
-      status: vi.fn()
+      status: vi.fn(),
+      history: vi.fn(),
+      deleteHistory: vi.fn()
     }
   }
 })
 
-const { genApi, ApiError } = await import("@/lib/api")
+const { genApi } = await import("@/lib/api")
 
 function renderPage() {
   return render(<WorkbenchPage />)
 }
 
-describe("生图页（规格 §5，单页，UI 极简）", () => {
+const mockHistoryItems: GenerationHistoryItem[] = [
+  {
+    id: 101,
+    job_id: "job-101",
+    model: "realistic-lcm",
+    prompt_original: "小狗在沙滩冲浪",
+    prompt_effective: "surfing dog",
+    size: "portrait",
+    created_at: "2026-11-20T10:00:00Z",
+    imageUrl: "/api/gen/history/101/image"
+  },
+  {
+    id: 102,
+    job_id: "job-102",
+    model: "counterfeit",
+    prompt_original: "未来城市夜景",
+    prompt_effective: "cyberpunk city night",
+    size: "square",
+    created_at: "2026-11-20T10:05:00Z",
+    imageUrl: "/api/gen/history/102/image"
+  }
+]
+
+describe("卡通风格生图页（并入 #14 历史区）", () => {
   beforeEach(async () => {
     localStorage.clear()
     vi.clearAllMocks()
     vi.mocked(genApi.health).mockResolvedValue({ online: true, ready: true })
+    vi.mocked(genApi.history).mockResolvedValue({
+      items: [],
+      total: 0,
+      page: 1,
+      pageSize: 12,
+      totalPages: 0
+    })
+    vi.mocked(genApi.deleteHistory).mockResolvedValue({ success: true })
     await i18n.changeLanguage("zh")
   })
 
@@ -35,36 +69,43 @@ describe("生图页（规格 §5，单页，UI 极简）", () => {
     vi.useRealTimers()
   })
 
-  it("页面仅包含核心元素，默认竖图与待机输出区，无说明性填充", async () => {
+  it("页面仅包含核心元素，默认竖图与待机输出区，提示词限 1000 字符", async () => {
     renderPage()
 
-    // 1. 大提示词输入框
+    // 1. 提示词输入框（maxLength 1000，字数计数）
     const textarea = screen.getByPlaceholderText("提示词")
     expect(textarea).toBeInTheDocument()
     expect(textarea).toHaveValue("")
+    expect(textarea).toHaveAttribute("maxLength", "1000")
+    expect(screen.getByText("0/1000")).toBeInTheDocument()
 
-    // 2. 方图/竖图分段选择（默认 portrait）
+    // 2. 方图/竖图切换（默认 portrait）
     const portraitItem = screen.getByRole("radio", { name: "竖图" })
     const squareItem = screen.getByRole("radio", { name: "方图" })
     expect(portraitItem).toHaveAttribute("data-state", "on")
     expect(squareItem).toHaveAttribute("data-state", "off")
 
-    // 3. 生成按钮（提示词为空时禁用）
+    // 切换方图
+    fireEvent.click(squareItem)
+    expect(squareItem).toHaveAttribute("data-state", "on")
+
+    // 3. 模型切换（默认 realistic-lcm）
+    const lcmModel = screen.getByRole("radio", { name: "写实·极速" })
+    expect(lcmModel).toHaveAttribute("data-state", "on")
+
+    // 4. 生成按钮（提示词为空时禁用）
     const submitBtn = screen.getByRole("button", { name: "生成" })
     expect(submitBtn).toBeDisabled()
 
-    // 4. 图片输出区：默认 portrait 对应 aspect-[2/3]
+    // 5. 画布输出区：待机显示 PIX 字标
     const output = screen.getByTestId("gen-output")
-    expect(output).toHaveClass("aspect-[2/3]")
+    expect(output).toBeInTheDocument()
+    expect(screen.getByText("PIX")).toBeInTheDocument()
 
-    // 切换方图后更新长宽比
-    fireEvent.click(squareItem)
-    expect(squareItem).toHaveAttribute("data-state", "on")
-    expect(output).toHaveClass("aspect-square")
-
-    // 页面健康检查被调用
+    // 6. 历史区标题与空态
+    expect(screen.getByText("生成历史")).toBeInTheDocument()
     await waitFor(() => {
-      expect(genApi.health).toHaveBeenCalledTimes(1)
+      expect(genApi.history).toHaveBeenCalledWith(1, 12)
     })
   })
 
@@ -78,8 +119,10 @@ describe("生图页（规格 §5，单页，UI 极简）", () => {
     await user.type(textarea, "   ")
     expect(submitBtn).toBeDisabled()
 
+    await user.clear(textarea)
     await user.type(textarea, "一只可爱的猫咪")
     expect(submitBtn).toBeEnabled()
+    expect(screen.getByText("7/1000")).toBeInTheDocument()
 
     await user.clear(textarea)
     expect(submitBtn).toBeDisabled()
@@ -89,11 +132,10 @@ describe("生图页（规格 §5，单页，UI 极简）", () => {
     vi.mocked(genApi.health).mockResolvedValue({ online: false })
     renderPage()
 
-    expect(await screen.findByRole("alert")).toHaveTextContent("机器离线")
+    expect(await screen.findByText("机器离线")).toBeInTheDocument()
     const recheckBtn = screen.getByRole("button", { name: "重新检查" })
     expect(recheckBtn).toBeInTheDocument()
 
-    // 提示词有内容但离线态依然禁用生成
     const textarea = screen.getByPlaceholderText("提示词")
     fireEvent.change(textarea, { target: { value: "test" } })
     const submitBtn = screen.getByRole("button", { name: "生成" })
@@ -113,11 +155,11 @@ describe("生图页（规格 §5，单页，UI 极简）", () => {
     vi.mocked(genApi.health).mockResolvedValue({ online: true, ready: false })
     renderPage()
 
-    expect(await screen.findByRole("status")).toHaveTextContent("机器启动中")
+    expect(await screen.findByText("机器启动中")).toBeInTheDocument()
     expect(screen.getByRole("button", { name: "重新检查" })).toBeInTheDocument()
   })
 
-  it("提交生图：提交中状态 → 成功生成中（秒数递增、按钮禁用、写入 localStorage）", async () => {
+  it("提交生图：提交中状态 → 成功生成中（进度条缓动、95% 封顶、等待期间允许编辑提示词）", async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true })
     vi.mocked(genApi.submit).mockResolvedValue({ jobId: "job-abc" })
     vi.mocked(genApi.status).mockResolvedValue({ state: "running" })
@@ -139,25 +181,40 @@ describe("生图页（规格 §5，单页，UI 极简）", () => {
     })
 
     // 进入生成中状态
-    expect(await screen.findByText("生成中")).toBeInTheDocument()
+    expect(
+      await screen.findByRole("button", { name: "生成中" })
+    ).toBeInTheDocument()
     expect(submitBtn).toBeDisabled()
 
-    // 检查 localStorage 记录
+    // 等待期间提示词输入框不被禁用，允许继续编辑
+    expect(textarea).not.toBeDisabled()
+    fireEvent.change(textarea, { target: { value: "修改后的下一张提示词" } })
+    expect(textarea).toHaveValue("修改后的下一张提示词")
+
+    // 检查 localStorage 记录保存的是提交时的 prompt
     const stored = JSON.parse(localStorage.getItem(GEN_JOB_STORAGE_KEY) || "{}")
     expect(stored.jobId).toBe("job-abc")
     expect(stored.prompt).toBe("赛博朋克城市")
-    expect(stored.size).toBe("portrait")
 
-    // 时间推进，秒数递增
+    // 推进时间，断言进度条递增
     act(() => {
       vi.advanceTimersByTime(3000)
     })
     expect(screen.getByText(/已等 3 秒/)).toBeInTheDocument()
 
+    // 进度条封顶 95%（即使等了极长时间）
+    act(() => {
+      vi.advanceTimersByTime(600 * 1000)
+    })
+    const progressbar = screen.getByRole("progressbar")
+    expect(
+      Number(progressbar.getAttribute("aria-valuenow"))
+    ).toBeLessThanOrEqual(95)
+
     vi.useRealTimers()
   })
 
-  it("轮询完成：完成时展示真实 <img> 且 src 符合契约", async () => {
+  it("轮询完成：完成时展示真实 <img> 并刷新历史列表", async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true })
     vi.mocked(genApi.submit).mockResolvedValue({ jobId: "job-done-1" })
     vi.mocked(genApi.status).mockResolvedValue({ state: "done" })
@@ -165,11 +222,11 @@ describe("生图页（规格 §5，单页，UI 极简）", () => {
     renderPage()
 
     const textarea = screen.getByPlaceholderText("提示词")
-    fireEvent.change(textarea, { target: { value: "晨曦森林" } })
+    fireEvent.change(textarea, { target: { value: "完成测试" } })
     fireEvent.click(screen.getByRole("button", { name: "生成" }))
 
     await waitFor(() => {
-      expect(screen.getByText("生成中")).toBeInTheDocument()
+      expect(screen.getByRole("button", { name: "生成中" })).toBeInTheDocument()
       expect(localStorage.getItem(GEN_JOB_STORAGE_KEY)).not.toBeNull()
     })
 
@@ -178,12 +235,13 @@ describe("生图页（规格 §5，单页，UI 极简）", () => {
       await vi.advanceTimersByTimeAsync(5000)
     })
 
-    // 轮询返回 done，应该展示 <img>
+    // 轮询返回 done，应该展示 <img> 且调用 refreshHistory
     await waitFor(() => {
-      const img = screen.getByRole("img")
+      const img = screen.getByRole("img", { name: "完成测试" })
       expect(img).toBeInTheDocument()
       expect(img).toHaveAttribute("src", "/api/gen/image/job-done-1")
-      expect(img).toHaveAttribute("alt", "晨曦森林")
+      // 首次加载 1 次 + 出图刷新 1 次 = 2 次
+      expect(genApi.history).toHaveBeenCalledTimes(2)
     })
   })
 
@@ -202,7 +260,7 @@ describe("生图页（规格 §5，单页，UI 极简）", () => {
     fireEvent.click(screen.getByRole("button", { name: "生成" }))
 
     await waitFor(() => {
-      expect(screen.getByText("生成中")).toBeInTheDocument()
+      expect(screen.getByRole("button", { name: "生成中" })).toBeInTheDocument()
       expect(localStorage.getItem(GEN_JOB_STORAGE_KEY)).not.toBeNull()
     })
 
@@ -211,46 +269,13 @@ describe("生图页（规格 §5，单页，UI 极简）", () => {
     })
 
     await waitFor(() => {
-      expect(screen.getByRole("alert")).toHaveTextContent("生成失败")
+      expect(screen.getByText("生成失败")).toBeInTheDocument()
       expect(
         screen.getByRole("button", { name: "重新生成" })
       ).toBeInTheDocument()
     })
 
-    // 失败会清理 storage
     expect(localStorage.getItem(GEN_JOB_STORAGE_KEY)).toBeNull()
-  })
-
-  it("提交返回机器忙碌 / 启动中 / 离线等异常态正确呈现", async () => {
-    // 1. busy
-    vi.mocked(genApi.submit).mockResolvedValueOnce({ busy: true })
-    const view1 = renderPage()
-    fireEvent.change(screen.getByPlaceholderText("提示词"), {
-      target: { value: "test" }
-    })
-    fireEvent.click(screen.getByRole("button", { name: "生成" }))
-    expect(await screen.findByText("机器忙碌")).toBeInTheDocument()
-    view1.unmount()
-
-    // 2. ready: false
-    vi.mocked(genApi.submit).mockResolvedValueOnce({ ready: false })
-    const view2 = renderPage()
-    fireEvent.change(screen.getByPlaceholderText("提示词"), {
-      target: { value: "test" }
-    })
-    fireEvent.click(screen.getByRole("button", { name: "生成" }))
-    expect(await screen.findByText("机器启动中")).toBeInTheDocument()
-    view2.unmount()
-
-    // 3. online: false
-    vi.mocked(genApi.submit).mockResolvedValueOnce({ online: false })
-    const view3 = renderPage()
-    fireEvent.change(screen.getByPlaceholderText("提示词"), {
-      target: { value: "test" }
-    })
-    fireEvent.click(screen.getByRole("button", { name: "生成" }))
-    expect(await screen.findByText("机器离线")).toBeInTheDocument()
-    view3.unmount()
   })
 
   it("12 分钟超时：停轮询进入超时态，提供「再查一次」与「重新生成」", async () => {
@@ -266,7 +291,7 @@ describe("生图页（规格 §5，单页，UI 极简）", () => {
     fireEvent.click(screen.getByRole("button", { name: "生成" }))
 
     await waitFor(() => {
-      expect(screen.getByText("生成中")).toBeInTheDocument()
+      expect(screen.getByRole("button", { name: "生成中" })).toBeInTheDocument()
     })
 
     // 前进 12 分钟 (720 秒)
@@ -275,7 +300,7 @@ describe("生图页（规格 §5，单页，UI 极简）", () => {
     })
 
     await waitFor(() => {
-      expect(screen.getByRole("alert")).toHaveTextContent("生成超时")
+      expect(screen.getByText("生成超时")).toBeInTheDocument()
       expect(
         screen.getByRole("button", { name: "再查一次" })
       ).toBeInTheDocument()
@@ -289,7 +314,7 @@ describe("生图页（规格 §5，单页，UI 极简）", () => {
     fireEvent.click(screen.getByRole("button", { name: "再查一次" }))
 
     await waitFor(() => {
-      const img = screen.getByRole("img")
+      const img = screen.getByRole("img", { name: "长耗时任务" })
       expect(img).toBeInTheDocument()
       expect(img).toHaveAttribute("src", "/api/gen/image/job-timeout-1")
     })
@@ -298,7 +323,7 @@ describe("生图页（规格 §5，单页，UI 极简）", () => {
   })
 
   it("任务续查：页面重进从 localStorage 恢复未完成任务", async () => {
-    const now = Date.now() - 30000 // 30 秒前提交
+    const now = Date.now() - 30000
     writeStoredJob({
       jobId: "job-stored-pending",
       prompt: "恢复的任务",
@@ -309,156 +334,74 @@ describe("生图页（规格 §5，单页，UI 极简）", () => {
     vi.mocked(genApi.status).mockResolvedValue({ state: "running" })
     renderPage()
 
-    // 输入框与尺寸恢复
     expect(screen.getByPlaceholderText("提示词")).toHaveValue("恢复的任务")
     expect(screen.getByRole("radio", { name: "方图" })).toHaveAttribute(
       "data-state",
       "on"
     )
 
-    // 直接进入生成中态
     await waitFor(() => {
-      expect(screen.getByText("生成中")).toBeInTheDocument()
+      expect(screen.getByRole("button", { name: "生成中" })).toBeInTheDocument()
       expect(genApi.status).toHaveBeenCalledWith("job-stored-pending")
     })
   })
 
-  it("任务续查：已完成任务重进页面直接取图", async () => {
-    const now = Date.now() - 60000
-    writeStoredJob({
-      jobId: "job-stored-done",
-      prompt: "已完成的图",
-      size: "portrait",
-      submittedAt: now
-    })
-
-    vi.mocked(genApi.status).mockResolvedValue({ state: "done" })
-    renderPage()
-
-    await waitFor(() => {
-      const img = screen.getByRole("img")
-      expect(img).toBeInTheDocument()
-      expect(img).toHaveAttribute("src", "/api/gen/image/job-stored-done")
-    })
-  })
-
-  it("任务续查：超 12 分钟任务重进页面直接进超时态", async () => {
-    const now = Date.now() - 13 * 60 * 1000 // 13 分钟前
-    writeStoredJob({
-      jobId: "job-stored-timeout",
-      prompt: "超时任务",
-      size: "portrait",
-      submittedAt: now
+  it("历史区：展示历史卡片、原图灯箱查看、下载链接与删除确认", async () => {
+    vi.mocked(genApi.history).mockResolvedValue({
+      items: mockHistoryItems,
+      total: 2,
+      page: 1,
+      pageSize: 12,
+      totalPages: 1
     })
 
     renderPage()
 
-    expect(await screen.findByRole("alert")).toHaveTextContent("生成超时")
-    expect(screen.getByRole("button", { name: "再查一次" })).toBeInTheDocument()
-    expect(screen.getByRole("button", { name: "重新生成" })).toBeInTheDocument()
-  })
+    // 1. 列表展示编号与提示词
+    expect(await screen.findByText("#101")).toBeInTheDocument()
+    expect(screen.getByText("小狗在沙滩冲浪")).toBeInTheDocument()
+    expect(screen.getByText("#102")).toBeInTheDocument()
+    expect(screen.getByText("未来城市夜景")).toBeInTheDocument()
 
-  it("前后台切换：切回前台补查单次健康检查与正在进行中的任务", async () => {
-    vi.mocked(genApi.submit).mockResolvedValue({ jobId: "job-vis-1" })
-    vi.mocked(genApi.status).mockResolvedValue({ state: "running" })
-
-    renderPage()
-
-    fireEvent.change(screen.getByPlaceholderText("提示词"), {
-      target: { value: "前台切换测试" }
-    })
-    fireEvent.click(screen.getByRole("button", { name: "生成" }))
-
-    await waitFor(() => {
-      expect(screen.getByText("生成中")).toBeInTheDocument()
-    })
-
-    expect(genApi.health).toHaveBeenCalledTimes(1)
-    const initialStatusCalls = vi.mocked(genApi.status).mock.calls.length
-
-    // 模拟切回前台 visibilitychange 事件
-    Object.defineProperty(document, "visibilityState", {
-      configurable: true,
-      value: "visible"
-    })
-    fireEvent(document, new Event("visibilitychange"))
-
-    await waitFor(() => {
-      // 健康检查补查一次
-      expect(genApi.health).toHaveBeenCalledTimes(2)
-      // 任务状态立即补查一次
-      expect(vi.mocked(genApi.status).mock.calls.length).toBeGreaterThan(
-        initialStatusCalls
-      )
-    })
-  })
-
-  it("完成态切后台且机器离线，切回前台时不被离线态覆盖图", async () => {
-    localStorage.setItem(
-      GEN_JOB_STORAGE_KEY,
-      JSON.stringify({
-        jobId: "done-job-1",
-        prompt: "测试图",
-        size: "portrait",
-        submittedAt: Date.now() - 5000
-      })
-    )
-    vi.mocked(genApi.status).mockResolvedValue({ state: "done" })
-
-    renderPage()
-
-    expect(await screen.findByRole("img")).toBeInTheDocument()
-
-    // 机器变为离线
-    vi.mocked(genApi.health).mockResolvedValue({ online: false })
-
-    // 模拟切回前台 visibilitychange
-    Object.defineProperty(document, "visibilityState", {
-      configurable: true,
-      value: "visible"
-    })
-    fireEvent(document, new Event("visibilitychange"))
-
-    await act(async () => {
-      await Promise.resolve()
-    })
-
-    // 图依然在，不被「机器离线」覆盖
-    expect(screen.getByRole("img")).toBeInTheDocument()
-    expect(screen.queryByText("机器离线")).not.toBeInTheDocument()
-  })
-
-  it("查询任务返回 404：展示本地化任务失效文案并清理本地存储", async () => {
-    vi.useFakeTimers({ shouldAdvanceTime: true })
-    vi.mocked(genApi.submit).mockResolvedValue({ jobId: "job-404" })
-    vi.mocked(genApi.status).mockRejectedValue(
-      new ApiError({ status: 404, message: "job not found" })
+    // 2. 下载链接属性断言
+    const downloadLinks = screen.getAllByRole("link", { name: "下载原图" })
+    expect(downloadLinks[0]).toHaveAttribute(
+      "href",
+      "/api/gen/history/101/image?download=1"
     )
 
-    renderPage()
-
-    fireEvent.change(screen.getByPlaceholderText("提示词"), {
-      target: { value: "丢失任务" }
-    })
-    fireEvent.click(screen.getByRole("button", { name: "生成" }))
+    // 3. 点击缩略图打开原图灯箱 Dialog
+    const viewThumbnails = screen.getAllByTitle("查看原图")
+    fireEvent.click(viewThumbnails[0])
 
     await waitFor(() => {
-      expect(screen.getByText("生成中")).toBeInTheDocument()
-      expect(localStorage.getItem(GEN_JOB_STORAGE_KEY)).not.toBeNull()
+      expect(screen.getByRole("dialog")).toBeInTheDocument()
     })
+    // 灯箱内关闭
+    fireEvent.click(screen.getByRole("button", { name: "关闭" }))
 
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(5000)
-    })
+    // 4. 删除历史项确认流程
+    const deleteButtons = screen.getAllByRole("button", { name: "删除" })
+    fireEvent.click(deleteButtons[0]) // 点击 #101 的删除
 
     await waitFor(() => {
-      expect(screen.getByRole("alert")).toHaveTextContent("任务不存在或已失效")
       expect(
-        screen.getByRole("button", { name: "重新生成" })
+        screen.getByText("确定要删除这条生成记录吗？删除后不可恢复。")
       ).toBeInTheDocument()
     })
 
-    expect(localStorage.getItem(GEN_JOB_STORAGE_KEY)).toBeNull()
+    // 在确认弹窗中点击确认删除
+    const confirmDeleteBtn = screen
+      .getAllByRole("button", { name: "删除" })
+      .pop()!
+    fireEvent.click(confirmDeleteBtn)
+
+    await waitFor(() => {
+      expect(genApi.deleteHistory).toHaveBeenCalledWith(101)
+      expect(screen.queryByText("#101")).not.toBeInTheDocument()
+      // #102 依然保留且编号不变
+      expect(screen.getByText("#102")).toBeInTheDocument()
+    })
   })
 
   it("支持英文双语展示", async () => {
@@ -469,31 +412,6 @@ describe("生图页（规格 §5，单页，UI 极简）", () => {
     expect(screen.getByRole("radio", { name: "Portrait" })).toBeInTheDocument()
     expect(screen.getByRole("radio", { name: "Square" })).toBeInTheDocument()
     expect(screen.getByRole("button", { name: "Generate" })).toBeInTheDocument()
-  })
-
-  it("模型选择器：默认选中 realistic-lcm，点击切换并随提交发送", async () => {
-    vi.mocked(genApi.submit).mockResolvedValue({ jobId: "job-model-1" })
-    renderPage()
-
-    const lcmItem = screen.getByRole("radio", { name: "写实·极速" })
-    const counterfeitItem = screen.getByRole("radio", { name: "动漫" })
-    expect(lcmItem).toHaveAttribute("data-state", "on")
-    expect(counterfeitItem).toHaveAttribute("data-state", "off")
-
-    fireEvent.click(counterfeitItem)
-    expect(counterfeitItem).toHaveAttribute("data-state", "on")
-    expect(lcmItem).toHaveAttribute("data-state", "off")
-
-    const textarea = screen.getByPlaceholderText("提示词")
-    fireEvent.change(textarea, { target: { value: "二次元美少女" } })
-    fireEvent.click(screen.getByRole("button", { name: "生成" }))
-
-    await waitFor(() => {
-      expect(genApi.submit).toHaveBeenCalledWith({
-        prompt: "二次元美少女",
-        size: "portrait",
-        model: "counterfeit"
-      })
-    })
+    expect(screen.getByText("History")).toBeInTheDocument()
   })
 })

@@ -1,9 +1,14 @@
 import { useCallback, useEffect, useRef, useState } from "react"
 import { useTranslation } from "react-i18next"
+import { Canvas } from "@/components/workbench/canvas"
+import { ControlPanel } from "@/components/workbench/control-panel"
+import { HistoryStrip } from "@/components/workbench/history-strip"
+import "@/components/workbench/workbench.css"
 import { ApiError, genApi } from "@/lib/api"
 import { describeApiError } from "@/lib/api-errors"
 import {
   DEFAULT_MODEL,
+  type GenerationHistoryItem,
   type GenerationModel,
   type GenerateSize
 } from "@/lib/api-types"
@@ -16,17 +21,10 @@ import {
   writeStoredJob,
   type GenPhase
 } from "@/lib/gen"
-import { sndDone, sndStart } from "@/lib/arcade-audio"
-import { ArcadeScreen } from "@/components/arcade/arcade-screen"
-import { ArcadeDeck } from "@/components/arcade/arcade-deck"
-import {
-  ArcadeGallery,
-  type LootItem
-} from "@/components/arcade/arcade-gallery"
-import "@/components/arcade/arcade.css"
 
 /**
- * 游戏厅生图控制台（Boss 战街机版）
+ * 卡通风格 Pix 生图工作台
+ * 桌面 2 列（画布 + 历史条，右控制面板）；移动端紧凑单列，100dvh 一屏完整显示无页面滚动。
  */
 export function WorkbenchPage() {
   const { t } = useTranslation()
@@ -34,47 +32,86 @@ export function WorkbenchPage() {
   const [size, setSize] = useState<GenerateSize>("portrait")
   const [model, setModel] = useState<GenerationModel>(DEFAULT_MODEL)
   const [phase, setPhase] = useState<GenPhase>("idle")
-  const [isGeneratingDone, setIsGeneratingDone] = useState(false)
   const [jobId, setJobId] = useState<string | null>(null)
   const [submittedAt, setSubmittedAt] = useState<number | null>(null)
   const [elapsed, setElapsed] = useState(0)
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
 
-  // 街机战况状态
-  const [score, setScore] = useState(0)
-  const [joyVec, setJoyVec] = useState({ x: 0, y: 0 })
-  const [attackTrigger, setAttackTrigger] = useState(0)
-  const [lootList, setLootList] = useState<LootItem[]>([])
-  const [toastMessage, setToastMessage] = useState<string | null>(null)
-  const toastTimerRef = useRef<NodeJS.Timeout | null>(null)
-
-  const showToast = useCallback((msg: string) => {
-    setToastMessage(msg)
-    if (toastTimerRef.current) clearTimeout(toastTimerRef.current)
-    toastTimerRef.current = setTimeout(() => {
-      setToastMessage(null)
-    }, 2400)
-  }, [])
+  // 历史记录状态
+  const [historyItems, setHistoryItems] = useState<GenerationHistoryItem[]>([])
+  const [historyPage, setHistoryPage] = useState(1)
+  const [historyTotalPages, setHistoryTotalPages] = useState(1)
+  const [historyLoading, setHistoryLoading] = useState(false)
+  const [historyError, setHistoryError] = useState("")
 
   const phaseRef = useRef(phase)
   phaseRef.current = phase
-  const isGeneratingDoneRef = useRef(isGeneratingDone)
-  isGeneratingDoneRef.current = isGeneratingDone
   const jobIdRef = useRef(jobId)
   jobIdRef.current = jobId
   const submittedAtRef = useRef(submittedAt)
   submittedAtRef.current = submittedAt
-  const promptRef = useRef(prompt)
-  promptRef.current = prompt
-  const sizeRef = useRef(size)
-  sizeRef.current = size
-  const modelRef = useRef(model)
-  modelRef.current = model
-  const scoreRef = useRef(score)
-  scoreRef.current = score
   const handleSubmitRef = useRef<(e?: React.FormEvent) => Promise<void>>(() =>
     Promise.resolve()
   )
+
+  /** 加载历史列表 */
+  const loadHistory = useCallback(
+    async (pageToLoad = 1) => {
+      setHistoryLoading(true)
+      setHistoryError("")
+      try {
+        const res = await genApi.history(pageToLoad, 12)
+        setHistoryPage(res.page)
+        setHistoryTotalPages(Math.max(1, Math.ceil(res.total / res.pageSize)))
+        if (pageToLoad === 1) {
+          setHistoryItems(res.items)
+        } else {
+          setHistoryItems((prev) => {
+            const existingIds = new Set(prev.map((it) => it.id))
+            const newItems = res.items.filter((it) => !existingIds.has(it.id))
+            return [...prev, ...newItems]
+          })
+        }
+      } catch (err) {
+        setHistoryError(describeApiError(t, err) || t("common.loading"))
+      } finally {
+        setHistoryLoading(false)
+      }
+    },
+    [t]
+  )
+
+  /** 出图成功时刷新历史条目（取第 1 页并按 ID 去重合并至头部） */
+  const refreshHistory = useCallback(async () => {
+    try {
+      const res = await genApi.history(1, 12)
+      setHistoryTotalPages(Math.max(1, Math.ceil(res.total / res.pageSize)))
+      setHistoryItems((prev) => {
+        const incomingMap = new Map(res.items.map((it) => [it.id, it]))
+        const rest = prev.filter((it) => !incomingMap.has(it.id))
+        return [...res.items, ...rest]
+      })
+    } catch {
+      // 刷新失败不阻塞
+    }
+  }, [])
+
+  /** 删除单条历史 */
+  const handleDeleteHistory = useCallback(
+    async (id: number): Promise<boolean> => {
+      await genApi.deleteHistory(id)
+      setHistoryItems((prev) => prev.filter((it) => it.id !== id))
+      return true
+    },
+    []
+  )
+
+  /** 加载更多历史 */
+  const handleLoadMoreHistory = useCallback(() => {
+    if (historyPage < historyTotalPages && !historyLoading) {
+      void loadHistory(historyPage + 1)
+    }
+  }, [historyPage, historyTotalPages, historyLoading, loadHistory])
 
   /**
    * 单次健康检查：
@@ -114,42 +151,6 @@ export function WorkbenchPage() {
     }
   }, [])
 
-  /** Boss 战爆开完成或超时降级：正式结算完成态与战利品 */
-  const handleBattleExplode = useCallback(() => {
-    setIsGeneratingDone(false)
-    setPhase("done")
-    sndDone()
-    if (jobIdRef.current) {
-      const currentJobId = jobIdRef.current
-      const timestamp = submittedAtRef.current || Date.now()
-      setLootList((prev) => {
-        if (prev.some((item) => item.jobId === currentJobId)) return prev
-        return [
-          {
-            id: currentJobId,
-            jobId: currentJobId,
-            prompt: promptRef.current,
-            score: scoreRef.current,
-            elapsed: elapsedSeconds(timestamp),
-            size: sizeRef.current,
-            model: modelRef.current,
-            createdAt: Date.now()
-          },
-          ...prev
-        ]
-      })
-    }
-  }, [])
-
-  /** 爆炸动效安全超时兜底：切后台或无 Canvas 环境 2s 内直切完成态 */
-  useEffect(() => {
-    if (!isGeneratingDone) return
-    const timer = setTimeout(() => {
-      handleBattleExplode()
-    }, 2000)
-    return () => clearTimeout(timer)
-  }, [isGeneratingDone, handleBattleExplode])
-
   /** 单次查询生图任务状态 */
   const checkJobStatus = useCallback(
     async (currentJobId: string, timestamp: number) => {
@@ -161,7 +162,8 @@ export function WorkbenchPage() {
       try {
         const res = await genApi.status(currentJobId)
         if (res.state === "done") {
-          setIsGeneratingDone(true)
+          setPhase("done")
+          void refreshHistory()
           return
         }
         if (res.state === "error") {
@@ -189,13 +191,14 @@ export function WorkbenchPage() {
         setErrorMessage(describeApiError(t, err))
       }
     },
-    [t]
+    [t, refreshHistory]
   )
 
-  /** 挂载：初始化与恢复 localStorage 任务 */
+  /** 挂载：初始化、恢复 localStorage 任务与拉取历史 */
   useEffect(() => {
-    const stored = readStoredJob()
+    void loadHistory(1)
 
+    const stored = readStoredJob()
     if (stored) {
       setJobId(stored.jobId)
       setSubmittedAt(stored.submittedAt)
@@ -216,7 +219,7 @@ export function WorkbenchPage() {
     } else {
       void checkHealth()
     }
-  }, [checkHealth, checkJobStatus])
+  }, [checkHealth, checkJobStatus, loadHistory])
 
   /** 轮询与计时器 */
   useEffect(() => {
@@ -234,9 +237,7 @@ export function WorkbenchPage() {
     }, 1000)
 
     const pollInterval = setInterval(() => {
-      if (!isGeneratingDoneRef.current) {
-        void checkJobStatus(jobId, submittedAt)
-      }
+      void checkJobStatus(jobId, submittedAt)
     }, GEN_POLL_INTERVAL_MS)
 
     return () => {
@@ -268,97 +269,6 @@ export function WorkbenchPage() {
     }
   }, [checkHealth, checkJobStatus])
 
-  /** 键盘控制与输入隔离 */
-  useEffect(() => {
-    const keysDown: Record<string, boolean> = {}
-
-    const focusInPrompt = () => {
-      const a = document.activeElement
-      return (
-        a?.id === "gen-prompt" ||
-        a?.tagName === "TEXTAREA" ||
-        a?.tagName === "INPUT"
-      )
-    }
-
-    const updateJoyFromKeys = () => {
-      let x = 0
-      let y = 0
-      if (keysDown.ArrowLeft || keysDown.KeyA) x -= 1
-      if (keysDown.ArrowRight || keysDown.KeyD) x += 1
-      if (keysDown.ArrowUp || keysDown.KeyW) y -= 1
-      if (keysDown.ArrowDown || keysDown.KeyS) y += 1
-      const m = Math.sqrt(x * x + y * y)
-      if (m > 0) {
-        setJoyVec({ x: x / m, y: y / m })
-      } else {
-        setJoyVec({ x: 0, y: 0 })
-      }
-    }
-
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (focusInPrompt()) {
-        if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
-          e.preventDefault()
-          void handleSubmitRef.current()
-        }
-        return
-      }
-
-      if (
-        phaseRef.current === "generating" ||
-        phaseRef.current === "submitting"
-      ) {
-        if (
-          [
-            "ArrowLeft",
-            "ArrowRight",
-            "ArrowUp",
-            "ArrowDown",
-            "KeyA",
-            "KeyD",
-            "KeyW",
-            "KeyS"
-          ].includes(e.code)
-        ) {
-          keysDown[e.code] = true
-          if (e.code.startsWith("Arrow")) e.preventDefault()
-          updateJoyFromKeys()
-        }
-        if (e.code === "Space" || e.code === "KeyJ") {
-          e.preventDefault()
-          setAttackTrigger((prev) => prev + 1)
-        }
-      } else if (e.key === "Enter") {
-        const a = document.activeElement
-        if (a?.tagName === "BUTTON") return
-        e.preventDefault()
-        void handleSubmitRef.current()
-      }
-    }
-
-    const handleKeyUp = (e: KeyboardEvent) => {
-      keysDown[e.code] = false
-      updateJoyFromKeys()
-    }
-
-    const handleBlur = () => {
-      for (const k of Object.keys(keysDown)) {
-        keysDown[k] = false
-      }
-      setJoyVec({ x: 0, y: 0 })
-    }
-
-    window.addEventListener("keydown", handleKeyDown)
-    window.addEventListener("keyup", handleKeyUp)
-    window.addEventListener("blur", handleBlur)
-    return () => {
-      window.removeEventListener("keydown", handleKeyDown)
-      window.removeEventListener("keyup", handleKeyUp)
-      window.removeEventListener("blur", handleBlur)
-    }
-  }, [])
-
   /** 提交生图 */
   const handleSubmit = async (e?: React.FormEvent) => {
     if (e) e.preventDefault()
@@ -367,17 +277,13 @@ export function WorkbenchPage() {
       !trimmed ||
       phase === "submitting" ||
       phase === "generating" ||
-      isGeneratingDone ||
       phase === "offline"
     ) {
       return
     }
 
-    setIsGeneratingDone(false)
     setPhase("submitting")
     setErrorMessage(null)
-    setScore(0)
-    sndStart()
 
     try {
       const res = await genApi.submit({ prompt: trimmed, size, model })
@@ -457,7 +363,8 @@ export function WorkbenchPage() {
     try {
       const res = await genApi.status(jobId)
       if (res.state === "done") {
-        handleBattleExplode()
+        setPhase("done")
+        void refreshHistory()
         return
       }
       if (res.state === "error") {
@@ -487,158 +394,57 @@ export function WorkbenchPage() {
   /** 超时态或异常态「重新生成」 */
   const handleRegenerate = () => {
     clearStoredJob()
-    setIsGeneratingDone(false)
     setJobId(null)
     setSubmittedAt(null)
     setElapsed(0)
     void handleSubmit()
   }
 
-  /** 回看战利品 */
-  const handleSelectLoot = (item: LootItem) => {
-    setIsGeneratingDone(false)
-    setJobId(item.jobId)
-    setPrompt(item.prompt)
-    setSize(item.size)
-    setElapsed(item.elapsed)
-    setScore(item.score)
-    setPhase("done")
-    document
-      .getElementById("cabinet")
-      ?.scrollIntoView({ behavior: "smooth", block: "start" })
-  }
-
   return (
-    <div className="arcade-room" data-testid="workbench-page">
-      <div className="stars arcade-stars" aria-hidden="true" />
-
-      {/* 街机柜机 */}
-      <div className="cabinet" id="cabinet">
-        <div className="screw tl" aria-hidden="true" />
-        <div className="screw tr" aria-hidden="true" />
-        <div className="screw bl" aria-hidden="true" />
-        <div className="screw br" aria-hidden="true" />
-
-        {/* 顶部跑马灯 */}
-        <header className="marquee">
-          <div className="bulbs" aria-hidden="true">
-            <i />
-            <i />
-            <i />
-            <i />
-            <i />
-            <i />
-            <i />
-            <i />
-            <i />
-            <i />
-            <i />
-            <i />
-          </div>
-          <h1>
-            PIX <span className="glow">{t("arcade.marquee.title")}</span>
-          </h1>
-          <div className="sub">
-            <b>{t("arcade.marquee.sub1")}</b> · {t("arcade.marquee.sub2")}
-          </div>
-        </header>
-
-        {/* 屏幕 */}
-        <ArcadeScreen
-          phase={phase}
-          jobId={jobId}
-          prompt={prompt}
-          size={size}
-          model={model}
-          submittedAt={submittedAt}
-          elapsed={elapsed}
-          errorMessage={errorMessage}
-          score={score}
-          joyVec={joyVec}
-          attackTrigger={attackTrigger}
-          isDone={isGeneratingDone}
-          onScoreUpdate={(s) => setScore(s)}
-          onBattleExplode={handleBattleExplode}
-          onAgain={() => {
-            setIsGeneratingDone(false)
-            setPhase("idle")
-          }}
-          onRecheckHealth={() => void handleRecheckHealth()}
-          onCheckOnce={() => void handleCheckOnce()}
-          onRegenerate={handleRegenerate}
-        />
-
-        {/* 操控台 */}
-        <form onSubmit={handleSubmit}>
-          <ArcadeDeck
-            prompt={prompt}
-            size={size}
-            model={model}
+    <div
+      data-testid="workbench-page"
+      className="wb-root -m-4 flex h-[calc(100dvh-3.5rem)] flex-col overflow-hidden p-3 sm:p-4"
+    >
+      <div className="flex h-full min-h-0 w-full flex-col gap-3 lg:grid lg:grid-cols-[minmax(0,1fr)_340px] xl:grid-cols-[minmax(0,1fr)_380px]">
+        {/* 左列：大图画布 + 底部历史条 */}
+        <div className="flex h-full min-h-0 min-w-0 flex-1 flex-col gap-3">
+          <Canvas
             phase={phase}
-            onPromptChange={setPrompt}
-            onSizeChange={setSize}
-            onModelChange={setModel}
-            onSubmit={() => void handleSubmit()}
-            onJoyMove={(v) => setJoyVec(v)}
-            onJoyEnd={() => setJoyVec({ x: 0, y: 0 })}
-            onAttack={() => setAttackTrigger((prev) => prev + 1)}
-            onToast={showToast}
+            jobId={jobId ?? ""}
+            prompt={prompt}
+            model={model}
+            elapsed={elapsed}
+            errorMessage={errorMessage ?? ""}
+            onRecheckHealth={handleRecheckHealth}
+            onCheckOnce={handleCheckOnce}
+            onRegenerate={handleRegenerate}
           />
-        </form>
-
-        {/* 底座 */}
-        <div className="cabinet-base">
-          <div className="coin-slot" aria-hidden="true">
-            <div className="slot" />
-            <div className="txt">
-              INSERT COIN
-              <br />
-              <small>{t("arcade.coin.small")}</small>
-            </div>
-          </div>
-          <div className="speaker" aria-hidden="true">
-            <i />
-            <i />
-            <i />
-            <i />
-            <i />
-            <i />
-            <i />
-            <i />
-            <i />
-            <i />
-            <i />
-            <i />
-            <i />
-            <i />
-            <i />
-            <i />
-            <i />
-            <i />
-            <i />
-            <i />
-            <i />
-            <i />
-            <i />
-            <i />
-            <i />
-            <i />
-            <i />
-          </div>
+          <HistoryStrip
+            items={historyItems}
+            loading={historyLoading}
+            error={historyError}
+            page={historyPage}
+            totalPages={historyTotalPages}
+            onLoadMore={handleLoadMoreHistory}
+            onDelete={handleDeleteHistory}
+          />
         </div>
-      </div>
 
-      {/* 战利品展示柜 */}
-      <ArcadeGallery items={lootList} onSelect={handleSelectLoot} />
-
-      {/* 提示弹泡 */}
-      <div
-        className={`arcade-toast ${toastMessage ? "show" : ""}`}
-        role={toastMessage ? "status" : undefined}
-        aria-live="polite"
-        aria-atomic="true"
-      >
-        {toastMessage}
+        {/* 右列：控制面板（移动端紧凑单列排布） */}
+        <ControlPanel
+          prompt={prompt}
+          onPromptChange={setPrompt}
+          size={size}
+          onSizeChange={setSize}
+          model={model}
+          onModelChange={setModel}
+          phase={phase}
+          submitting={phase === "submitting"}
+          generating={phase === "generating"}
+          offline={phase === "offline"}
+          onSubmit={() => void handleSubmit()}
+          className="h-full"
+        />
       </div>
     </div>
   )

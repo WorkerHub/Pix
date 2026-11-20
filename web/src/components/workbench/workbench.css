@@ -1,0 +1,133 @@
+/* 卡通风格生图工作台样式 (Workbench Cartoon Theme) */
+
+.wb-root {
+  background: linear-gradient(180deg, #ffd23f 0%, #ff9d2e 100%);
+  color: #26264a;
+}
+
+.wb-panel {
+  background: #fff6e9;
+  border: 3px solid #26264a;
+  border-radius: 22px;
+  box-shadow: 7px 7px 0 #26264a;
+}
+
+.wb-canvas {
+  background: #1e1e3f;
+  border: 3px solid #26264a;
+  border-radius: 22px;
+  box-shadow: 7px 7px 0 #26264a;
+}
+
+.wb-title {
+  font-family: "ZCOOL KuaiLe", "Noto Sans SC", sans-serif;
+}
+
+.wb-btn-generate {
+  background: linear-gradient(180deg, #2fe0c8 0%, #0db3a6 100%);
+  border: 3px solid #26264a;
+  border-radius: 16px;
+  box-shadow: 4px 4px 0 #26264a;
+  color: #26264a;
+  font-weight: 700;
+  transition:
+    transform 0.1s ease,
+    box-shadow 0.1s ease;
+}
+
+.wb-btn-generate:hover:not(:disabled) {
+  transform: translate(-1px, -1px);
+  box-shadow: 5px 5px 0 #26264a;
+}
+
+.wb-btn-generate:active:not(:disabled) {
+  transform: translate(2px, 2px);
+  box-shadow: 2px 2px 0 #26264a;
+}
+
+.wb-btn-generate:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+  box-shadow: 2px 2px 0 #26264a;
+}
+
+.wb-btn-cartoon {
+  background: #ffffff;
+  border: 2px solid #26264a;
+  border-radius: 12px;
+  box-shadow: 2px 2px 0 #26264a;
+  color: #26264a;
+  font-weight: 600;
+  transition:
+    transform 0.1s ease,
+    box-shadow 0.1s ease;
+}
+
+.wb-btn-cartoon:hover:not(:disabled) {
+  transform: translate(-1px, -1px);
+  box-shadow: 3px 3px 0 #26264a;
+}
+
+.wb-btn-cartoon:active:not(:disabled) {
+  transform: translate(1px, 1px);
+  box-shadow: 1px 1px 0 #26264a;
+}
+
+.wb-btn-cartoon:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+button.wb-toggle-item {
+  background: #ffffff;
+  border: 2px solid #26264a;
+  border-radius: 12px;
+  color: #26264a;
+  font-weight: 700;
+  transition:
+    background-color 0.15s ease,
+    color 0.15s ease,
+    transform 0.1s ease;
+}
+
+button.wb-toggle-item:hover:not(:disabled) {
+  background-color: #f3efe6;
+}
+
+button.wb-toggle-item[data-state="on"] {
+  background-color: #26264a;
+  color: #ffd23f;
+}
+
+.wb-history-card {
+  background: #ffffff;
+  border: 2px solid #26264a;
+  border-radius: 14px;
+  box-shadow: 3px 3px 0 #26264a;
+  transition:
+    transform 0.15s ease,
+    box-shadow 0.15s ease;
+}
+
+.wb-history-card:hover {
+  transform: translate(-1px, -1px);
+  box-shadow: 4px 4px 0 #26264a;
+}
+
+div.wb-dialog-cartoon[data-slot="dialog-content"] {
+  background: #fff6e9;
+  border: 3px solid #26264a;
+  border-radius: 20px;
+  box-shadow: 6px 6px 0 #26264a;
+  color: #26264a;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .wb-btn-generate,
+  .wb-btn-cartoon,
+  .wb-toggle-item,
+  .wb-history-card {
+    transition: none;
+    transform: none;
+  }
+}

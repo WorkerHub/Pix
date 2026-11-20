@@ -91,3 +91,27 @@ export function elapsedSeconds(submittedAt: number, now = Date.now()): number {
 export function isTimedOut(submittedAt: number, now = Date.now()): boolean {
   return now - submittedAt >= GEN_TIMEOUT_MS
 }
+
+/** 各模型预估生成时长（秒）——写实·极速 100，其余 250。 */
+export function estimatedGenDurationSec(model?: GenerationModel): number {
+  return model === "realistic-lcm" ? 100 : 250
+}
+
+/** 进度封顶（真图到达前最多 95%）。 */
+export const GEN_PROGRESS_CAP = 95
+
+/**
+ * 进度估算曲线：ease-out 缓动，真图到达前 95% 封顶。
+ * 沿用 #16 曲线口径，按模型分档时长。
+ */
+export function calcEstimatedProgress(
+  elapsedMs: number,
+  model?: GenerationModel
+): number {
+  const expected = estimatedGenDurationSec(model) * 1000 * 1.28
+  const raw = Math.min(1, Math.max(0, elapsedMs) / expected)
+  return Math.min(
+    GEN_PROGRESS_CAP,
+    Math.floor((1 - (1 - raw) ** 1.6) * GEN_PROGRESS_CAP)
+  )
+}
