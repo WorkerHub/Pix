@@ -134,7 +134,7 @@ describe("生图页（规格 §5，单页，UI 极简）", () => {
       expect(genApi.submit).toHaveBeenCalledWith({
         prompt: "赛博朋克城市",
         size: "portrait",
-        model: "realistic"
+        model: "realistic-lcm"
       })
     })
 
@@ -471,18 +471,18 @@ describe("生图页（规格 §5，单页，UI 极简）", () => {
     expect(screen.getByRole("button", { name: "Generate" })).toBeInTheDocument()
   })
 
-  it("模型选择器：默认选中 realistic，点击切换并随提交发送", async () => {
+  it("模型选择器：默认选中 realistic-lcm，点击切换并随提交发送", async () => {
     vi.mocked(genApi.submit).mockResolvedValue({ jobId: "job-model-1" })
     renderPage()
 
-    const realisticItem = screen.getByRole("radio", { name: "写实·原版" })
+    const lcmItem = screen.getByRole("radio", { name: "写实·极速" })
     const counterfeitItem = screen.getByRole("radio", { name: "动漫" })
-    expect(realisticItem).toHaveAttribute("data-state", "on")
+    expect(lcmItem).toHaveAttribute("data-state", "on")
     expect(counterfeitItem).toHaveAttribute("data-state", "off")
 
     fireEvent.click(counterfeitItem)
     expect(counterfeitItem).toHaveAttribute("data-state", "on")
-    expect(realisticItem).toHaveAttribute("data-state", "off")
+    expect(lcmItem).toHaveAttribute("data-state", "off")
 
     const textarea = screen.getByPlaceholderText("提示词")
     fireEvent.change(textarea, { target: { value: "二次元美少女" } })
