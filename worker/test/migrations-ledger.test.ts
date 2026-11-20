@@ -5,6 +5,7 @@
 import { describe, expect, it } from "vitest"
 import {
   BASELINE_MIGRATION,
+  GENERATIONS_DURATION_MIGRATION,
   GENERATIONS_MIGRATION,
   getMigrations
 } from "../src/lib/migrations"
@@ -32,12 +33,13 @@ function columnNames(db: SqliteD1, table: string): string[] {
 }
 
 describe("迁移定义", () => {
-  it("单一基线 schema_v1 与增量 schema_v2，语句内部不含分号", () => {
+  it("单一基线 schema_v1 与增量 schema_v2、schema_v3，语句内部不含分号", () => {
     const prefix = "wiki_"
     const migrations = getMigrations(prefix)
     expect(migrations.map((migration) => migration.name)).toEqual([
       BASELINE_MIGRATION,
-      GENERATIONS_MIGRATION
+      GENERATIONS_MIGRATION,
+      GENERATIONS_DURATION_MIGRATION
     ])
     for (const migration of migrations) {
       const statements = splitStatements(migration.sql)
@@ -96,7 +98,8 @@ describe("账本命名", () => {
     if (again.success) {
       expect(again.migrations).toEqual([
         { name: BASELINE_MIGRATION, status: "skipped" },
-        { name: GENERATIONS_MIGRATION, status: "skipped" }
+        { name: GENERATIONS_MIGRATION, status: "skipped" },
+        { name: GENERATIONS_DURATION_MIGRATION, status: "skipped" }
       ])
     }
   })
@@ -118,7 +121,8 @@ describe("旧账本改名承接", () => {
     if (result.success) {
       expect(result.migrations).toEqual([
         { name: BASELINE_MIGRATION, status: "skipped" },
-        { name: GENERATIONS_MIGRATION, status: "skipped" }
+        { name: GENERATIONS_MIGRATION, status: "skipped" },
+        { name: GENERATIONS_DURATION_MIGRATION, status: "skipped" }
       ])
     }
 
@@ -131,7 +135,8 @@ describe("旧账本改名承接", () => {
       .all() as Array<{ name: string }>
     expect(rows.map((row) => row.name)).toEqual([
       BASELINE_MIGRATION,
-      GENERATIONS_MIGRATION
+      GENERATIONS_MIGRATION,
+      GENERATIONS_DURATION_MIGRATION
     ])
   })
 
@@ -224,10 +229,11 @@ describe("生产库只读识别兼容（存量已应用 v1..v6）", () => {
     const result = await runSetup(env)
     expect(result.success).toBe(true)
     if (result.success) {
-      // 必须被只读识别为已最新，包含 V1 与 V2 且状态均为 skipped
+      // 必须被只读识别为已最新，包含 V1、V2 与 V3 且状态均为 skipped
       expect(result.migrations).toEqual([
         { name: BASELINE_MIGRATION, status: "skipped" },
-        { name: GENERATIONS_MIGRATION, status: "skipped" }
+        { name: GENERATIONS_MIGRATION, status: "skipped" },
+        { name: GENERATIONS_DURATION_MIGRATION, status: "skipped" }
       ])
     }
 
@@ -311,15 +317,17 @@ describe("单一 V1 终态表结构验证（全新安装）", () => {
       "prompt_effective",
       "size",
       "r2_key",
-      "created_at"
+      "created_at",
+      "duration_seconds"
     ])
   })
 
-  it("存量库只有 schema_v1 时：增量应用 schema_v2，并建出 generations 表", async () => {
+  it("存量库只有 schema_v1 时：增量应用 schema_v2 与 schema_v3，并建出完整 generations 表", async () => {
     const { env, db } = await initializedContext()
     const prefix = activePrefix(env)
     const ledger = migrationsTable(prefix)
-    // 模拟只有 v1 记账的存量库
+    // 模拟只有 v1 记账的存量库（当时还没有 generations 表）
+    db.db.exec(`DROP TABLE IF EXISTS ${generationsTable(prefix)}`)
     db.db.exec(`DELETE FROM ${ledger}`)
     db.db
       .prepare(`INSERT INTO ${ledger} (name, applied_at) VALUES (?, ?)`)
@@ -330,9 +338,79 @@ describe("单一 V1 终态表结构验证（全新安装）", () => {
     if (result.success) {
       expect(result.migrations).toEqual([
         { name: BASELINE_MIGRATION, status: "skipped" },
-        { name: GENERATIONS_MIGRATION, status: "applied" }
+        { name: GENERATIONS_MIGRATION, status: "applied" },
+        { name: GENERATIONS_DURATION_MIGRATION, status: "applied" }
       ])
     }
     expect(tableNames(db)).toContain(generationsTable(prefix))
+    expect(columnNames(db, generationsTable(prefix))).toContain(
+      "duration_seconds"
+    )
+  })
+
+  it("存量库已有 schema_v1 与 schema_v2 时：增量应用 schema_v3，数据完整保留且新列为 null", async () => {
+    const { env, db } = await initializedContext()
+    const prefix = activePrefix(env)
+    const ledger = migrationsTable(prefix)
+    const genTable = generationsTable(prefix)
+
+    // 重置为只有 v1 与 v2 已应用的存量状态，且 generations 表为不含 duration_seconds 的老结构
+    db.db.exec(`DROP TABLE IF EXISTS ${genTable}`)
+    const [, v2] = getMigrations(prefix)
+    for (const stmt of splitStatements(v2.sql)) {
+      db.db.exec(stmt)
+    }
+
+    // 插入一条存量老数据
+    db.db
+      .prepare(
+        `INSERT INTO ${genTable}
+         (user_id, job_id, model, prompt_original, prompt_effective, size, r2_key, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+      )
+      .run(
+        1,
+        "job-legacy-1",
+        "realistic-lcm",
+        "legacy prompt",
+        "legacy prompt",
+        "square",
+        "1/job-legacy-1.png",
+        "2026-11-19T00:00:00.000Z"
+      )
+
+    // 重置账本为只有 v1 与 v2
+    db.db.exec(`DELETE FROM ${ledger}`)
+    db.db
+      .prepare(`INSERT INTO ${ledger} (name, applied_at) VALUES (?, ?)`)
+      .run(BASELINE_MIGRATION, Math.floor(Date.now() / 1000))
+    db.db
+      .prepare(`INSERT INTO ${ledger} (name, applied_at) VALUES (?, ?)`)
+      .run(GENERATIONS_MIGRATION, Math.floor(Date.now() / 1000))
+
+    // 此时列名不含 duration_seconds
+    expect(columnNames(db, genTable)).not.toContain("duration_seconds")
+
+    // 执行 setup 增量升级
+    const result = await runSetup(env)
+    expect(result.success).toBe(true)
+    if (result.success) {
+      expect(result.migrations).toEqual([
+        { name: BASELINE_MIGRATION, status: "skipped" },
+        { name: GENERATIONS_MIGRATION, status: "skipped" },
+        { name: GENERATIONS_DURATION_MIGRATION, status: "applied" }
+      ])
+    }
+
+    // 表结构已升级包含 duration_seconds
+    expect(columnNames(db, genTable)).toContain("duration_seconds")
+
+    // 存量老数据完整保留，且 duration_seconds 字段为 null
+    const row = db.db
+      .prepare(`SELECT * FROM ${genTable} WHERE job_id = ?`)
+      .get<{ job_id: string; duration_seconds: number | null }>("job-legacy-1")
+    expect(row).toBeDefined()
+    expect(row?.job_id).toBe("job-legacy-1")
+    expect(row?.duration_seconds).toBeNull()
   })
 })

@@ -12,6 +12,7 @@ export interface GenerationRow {
   prompt_effective: string
   size: "portrait" | "square"
   r2_key: string
+  duration_seconds: number | null
   created_at: string
 }
 
@@ -23,10 +24,11 @@ export interface InsertGenerationParams {
   promptEffective: string
   size: "portrait" | "square"
   r2Key: string
+  durationSeconds?: number | null
   createdAt?: string
 }
 
-const GENERATION_COLUMNS = `id, user_id, job_id, model, prompt_original, prompt_effective, size, r2_key, created_at`
+const GENERATION_COLUMNS = `id, user_id, job_id, model, prompt_original, prompt_effective, size, r2_key, duration_seconds, created_at`
 
 /** 根据机器侧 jobId 查询是否已入库（写入幂等检查）。 */
 export async function findGenerationByJobId(
@@ -50,12 +52,13 @@ export async function insertGeneration(
 ): Promise<boolean> {
   const createdAt = params.createdAt ?? new Date().toISOString()
   const model = params.model ?? "realistic-lcm"
+  const durationSeconds = params.durationSeconds ?? null
   try {
     const res = await db
       .prepare(
         `INSERT OR IGNORE INTO ${generationsTable(prefix)}
-         (user_id, job_id, model, prompt_original, prompt_effective, size, r2_key, created_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+         (user_id, job_id, model, prompt_original, prompt_effective, size, r2_key, duration_seconds, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
       )
       .bind(
         params.userId,
@@ -65,6 +68,7 @@ export async function insertGeneration(
         params.promptEffective,
         params.size,
         params.r2Key,
+        durationSeconds,
         createdAt
       )
       .run()

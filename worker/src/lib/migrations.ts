@@ -13,6 +13,7 @@ import {
   SCHEMA_INDEXES,
   SCHEMA_TABLES,
   baselineStatements,
+  generationsDurationStatements,
   generationsStatements
 } from "./schema"
 import { generationsTable, tableName } from "./tables"
@@ -34,6 +35,8 @@ export interface Migration {
 export const BASELINE_MIGRATION = "schema_v1"
 /** 业务增量迁移名：生图历史索引表。 */
 export const GENERATIONS_MIGRATION = "schema_v2"
+/** 业务增量迁移名：生图历史表新增耗时列。 */
+export const GENERATIONS_DURATION_MIGRATION = "schema_v3"
 
 export function getMigrations(prefix: string): Migration[] {
   const statements = baselineStatements(prefix)
@@ -64,8 +67,17 @@ export function getMigrations(prefix: string): Migration[] {
     )
   }
 
+  const v3Statements = generationsDurationStatements(prefix)
+  const v3Sql = v3Statements.join(";\n\n")
+  if (!v3Sql.includes(expectedGenTable)) {
+    throw new Error(
+      `migration ${GENERATIONS_DURATION_MIGRATION} is missing table ${expectedGenTable}`
+    )
+  }
+
   return [
     { name: BASELINE_MIGRATION, sql },
-    { name: GENERATIONS_MIGRATION, sql: v2Sql }
+    { name: GENERATIONS_MIGRATION, sql: v2Sql },
+    { name: GENERATIONS_DURATION_MIGRATION, sql: v3Sql }
   ]
 }
