@@ -35,6 +35,6 @@ SIGNING_SECRET=SIGNING_SECRET_PLACEHOLDER
 #
 # DEFAULT_MODEL（可选，非密钥，默认 realistic-lcm）：默认生图模型 ID。
 # 允许值：realistic-lcm / realistic / majicmix / dreamshaper / counterfeit。
-# 不配置时代码回退到 realistic-lcm；部署时由 wrangler [vars] 或环境变量覆盖为 realistic。
-# DEFAULT_MODEL=realistic
+# 不配置时代码回退到 realistic-lcm；如需切换可通过 wrangler [vars] 或环境变量覆盖。
+# DEFAULT_MODEL=realistic-lcm
 

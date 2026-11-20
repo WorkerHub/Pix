@@ -66,9 +66,8 @@ jobs:
       # 不进 secrets.json，也不进 scripts/materialize-secrets.mjs 的校验名单（该脚本不为此改动）。
       #
       # DEFAULT_MODEL 非密钥（模型 ID，白名单值），同样走 --var 注入；Worker 侧
-      # resolveDefaultModel(env) 读 env.DEFAULT_MODEL（#23 已合并）。回退条款：LCM 生产
-      # 对比验收通过前默认 realistic、realistic-lcm 暂不上线；验收通过后另开单把这行改回
-      # realistic-lcm。不读 secret（非密钥，走 secret 无谓增加配置面与漂移风险）。
+      # resolveDefaultModel(env) 读 env.DEFAULT_MODEL（#23 已合并）。LCM 对比验收
+      # 已通过，默认模型恢复为 realistic-lcm（回退条款第二处）。不读 secret（非密钥，走 secret 无谓增加配置面与漂移风险）。
       - name: Deploy Worker
         working-directory: worker
         env:
@@ -82,4 +81,4 @@ jobs:
           fi
           pnpm exec wrangler deploy --secrets-file "$RUNNER_TEMP/secrets.json" \
             --var "APP_VERSION:${APP_VERSION}" \
-            --var "DEFAULT_MODEL:realistic"
+            --var "DEFAULT_MODEL:realistic-lcm"
