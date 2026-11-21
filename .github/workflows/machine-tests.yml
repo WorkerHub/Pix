@@ -33,7 +33,7 @@ jobs:
       # gha 缓存按 Git ref 隔离（与 tag 触发的 docker-publish 不共享），此处指定独立 scope=machine-tests；
       # 首跑/无缓存时进行冷构建，同 PR 再次推送或 main 分支热缓存命中时仅重建 machine 代码层。
       - name: Build machine image
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: machine
           file: machine/Dockerfile
