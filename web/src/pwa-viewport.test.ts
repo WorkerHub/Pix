@@ -8,7 +8,9 @@ describe("PWA 视口固定与禁止缩放规范", () => {
 
   it("index.html 视口 meta 标签包含 maximum-scale=1.0 与 user-scalable=no", () => {
     const html = readFileSync(htmlPath, "utf8")
-    const viewportMatch = html.match(/<meta\s+name="viewport"\s+content="([^"]+)"/s)
+    const viewportMatch = html.match(
+      /<meta\s+name="viewport"\s+content="([^"]+)"/s
+    )
     expect(viewportMatch).not.toBeNull()
     const content = viewportMatch![1]
     expect(content).toContain("width=device-width")
