@@ -65,7 +65,7 @@ jobs:
           echo "tags=$TAGS" >> "$GITHUB_OUTPUT"
 
       - name: Build image for smoke test
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: machine
           file: machine/Dockerfile
@@ -108,7 +108,7 @@ jobs:
           echo "Smoke test container cleaned up successfully."
 
       - name: Build and push
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: machine
           file: machine/Dockerfile
