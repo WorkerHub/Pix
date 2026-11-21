@@ -2,7 +2,10 @@
 <html lang="zh">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"
+    />
     <meta name="color-scheme" content="light dark" />
     <meta name="theme-color" content="#ffffff" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
@@ -21,6 +24,11 @@
       // 会看到一帧白屏。键与 web/src/lib/theme.ts 的 THEME_STORAGE_KEY 一致，
       // 取值兼容 zustand persist 的 {state:{theme}} 与裸字符串。
       ;(() => {
+        // PWA 视口固定（禁止双指缩放）：iOS Safari 对 user-scalable=no 支持不稳，补 gesturestart 拦截
+        document.addEventListener("gesturestart", (e) => {
+          e.preventDefault()
+        })
+
         const root = document.documentElement
         const meta = document.querySelector('meta[name="theme-color"]')
         let theme = "auto"
