@@ -27,7 +27,7 @@ jobs:
       - uses: actions/checkout@v7
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@v4
 
       # 测试环境采用与生产 Dockerfile 一致的基础镜像：CPU 版 PyTorch + ComfyUI v0.9.2 + 运行依赖。
       # gha 缓存按 Git ref 隔离（与 tag 触发的 docker-publish 不共享），此处指定独立 scope=machine-tests；
