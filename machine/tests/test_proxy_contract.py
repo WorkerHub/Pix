@@ -533,6 +533,85 @@ def test_image_200_elapsed_seconds_idempotent(client, mock_comfy_server):
     assert resp2.headers.get("x-pix-elapsed-seconds") == "4"
 
 
+def test_image_200_elapsed_from_execution_timestamps(client, mock_comfy_server):
+    """history 带 execution_start/execution_success 时间戳时，耗时按两者之差取整，覆盖回退口径"""
+    job_id = "job-tracked-elapsed-ts"
+    tracked_jobs[job_id] = {
+        "created_at": time.time() - 100.0,
+        "prompt": "test prompt",
+    }
+    mock_comfy_server.state["history"] = {
+        job_id: {
+            "status": {
+                "status_str": "success",
+                "completed": True,
+                "messages": [
+                    ["execution_start", {"prompt_id": job_id, "timestamp": 1000000}],
+                    ["execution_success", {"prompt_id": job_id, "timestamp": 1004000}],
+                ],
+            },
+            "outputs": {
+                "7": {"images": [{"filename": "Pix_0001.png", "subfolder": "", "type": "output"}]}
+            },
+        }
+    }
+
+    resp = client.get(f"/image/{job_id}", headers=AUTH_HEADERS)
+    assert resp.status_code == 200
+    assert resp.headers["x-pix-elapsed-seconds"] == "4"
+    assert tracked_jobs[job_id]["elapsed_seconds"] == 4
+
+
+def test_image_200_elapsed_fallback_when_messages_missing(client, mock_comfy_server):
+    """history 无 messages 时回退现行算法（取图时刻减提交时刻取整）"""
+    job_id = "job-tracked-elapsed-fallback"
+    tracked_jobs[job_id] = {
+        "created_at": time.time() - 3.2,
+        "prompt": "test prompt",
+    }
+    mock_comfy_server.state["history"] = {
+        job_id: {
+            "status": {"status_str": "success", "completed": True},
+            "outputs": {
+                "7": {"images": [{"filename": "Pix_0001.png", "subfolder": "", "type": "output"}]}
+            },
+        }
+    }
+
+    resp = client.get(f"/image/{job_id}", headers=AUTH_HEADERS)
+    assert resp.status_code == 200
+    assert resp.headers["x-pix-elapsed-seconds"] == "3"
+    assert tracked_jobs[job_id]["elapsed_seconds"] == 3
+
+
+def test_image_200_elapsed_fallback_on_partial_timestamps(client, mock_comfy_server):
+    """仅 execution_start、缺 execution_success 时回退现行算法"""
+    job_id = "job-tracked-elapsed-partial"
+    tracked_jobs[job_id] = {
+        "created_at": time.time() - 2.0,
+        "prompt": "test prompt",
+    }
+    mock_comfy_server.state["history"] = {
+        job_id: {
+            "status": {
+                "status_str": "success",
+                "completed": True,
+                "messages": [
+                    ["execution_start", {"prompt_id": job_id, "timestamp": 1000000}],
+                ],
+            },
+            "outputs": {
+                "7": {"images": [{"filename": "Pix_0001.png", "subfolder": "", "type": "output"}]}
+            },
+        }
+    }
+
+    resp = client.get(f"/image/{job_id}", headers=AUTH_HEADERS)
+    assert resp.status_code == 200
+    assert resp.headers["x-pix-elapsed-seconds"] == "2"
+    assert tracked_jobs[job_id]["elapsed_seconds"] == 2
+
+
 def test_image_200_after_generate_flow(client, mock_comfy_server):
     """经由 POST /generate 提交的任务，取图时返回合法整数秒 X-Pix-Elapsed-Seconds"""
     model_manager.checkpoints_ready["majicmix"] = True
