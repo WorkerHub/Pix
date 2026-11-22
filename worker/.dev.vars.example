@@ -1,0 +1,40 @@
+# 本地 `wrangler dev` 的最小 .dev.vars 模板。
+# 复制成 worker/.dev.vars（已 gitignore）后填入真实值——真实密钥绝不进仓库。
+# 线上同名项由 CI 经 `wrangler deploy --secrets-file` 上传（workflow 见 .github/workflows/deploy.yml，凭证清单见 README「部署 → 凭证清单」）。
+#
+# SETUP_SECRET：setup 页与 POST /api/setup 的 X-Setup-Secret 令牌。
+# 缺失、空值或仍是 *_PLACEHOLDER 时，setup 接口一律 500 失败关闭（页面不显示密钥框）。
+# 生成：openssl rand -base64 32
+SETUP_SECRET=SETUP_SECRET_PLACEHOLDER
+#
+# SIGNING_SECRET（必需，密钥）：服务端签名钥——两步登录的 tempToken、通行密钥挑战
+# Cookie、邮件验证码哈希都从这里取。与 SETUP_SECRET 分开，绝不复用同一个值。
+# 未配置时需签名的端点（2FA/通行密钥/验证码）一律 500 失败关闭，其余功能不受影响；
+# 部署期 scripts/materialize-secrets.mjs 同样校验，缺失则不生成 secrets.json。
+# 生成：openssl rand -base64 32
+SIGNING_SECRET=SIGNING_SECRET_PLACEHOLDER
+#
+# TABLE_PREFIX（可选，非密钥）：不配置 → 默认 "pix"（表名 pix_users …）；
+# 写成空值 → 无前缀；其他值 → 原样后补尾部下划线。只允许字母、数字、下划线。
+# 注意：保留字 none 只在 CI 侧由 scripts/materialize-secrets.mjs 翻译，本地
+# .dev.vars 不经过它——本地要无前缀就写空值（TABLE_PREFIX=）。
+# TABLE_PREFIX=pix
+#
+# WAKER_SIGNING_KEY（可选，密钥）：定时任务触发方式的唯一开关（三态）。
+# 不配 → Worker 自带 Cron 跑定时任务；配 waker 给的 key → 改由 waker 回调触发；
+# 配保留值 false → 显式关闭自动触发。只写进 GitHub Secrets、不要进仓库。
+# WAKER_SIGNING_KEY=
+#
+# PIX_SERVER_URL（可选，Worker secret）：机器侧 private 发布基地址。
+# 代码只在此基地址后拼 /health、/generate 等路径，含平台令牌的完整接入形式以用户侧上机实测为准。
+# PIX_SERVER_URL=http://127.0.0.1:8190
+#
+# PIX_SERVER_SECRET（可选，Worker secret）：机器侧代理共享密钥（与机器 .env 同值）。
+# 请求机器时在请求头带 X-Pix-Secret。
+# PIX_SERVER_SECRET=
+#
+# DEFAULT_MODEL（可选，非密钥，默认 realistic-lcm）：默认生图模型 ID。
+# 允许值：realistic-lcm / realistic / majicmix / dreamshaper / counterfeit。
+# 不配置时代码回退到 realistic-lcm；如需切换可通过 wrangler [vars] 或环境变量覆盖。
+# DEFAULT_MODEL=realistic-lcm
+

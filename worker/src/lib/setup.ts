@@ -1,0 +1,319 @@
+/**
+ * setup / 数据库维护：初始化与升级的唯一内核（规格 §5.3）。
+ *
+ * 语义：
+ * - 前缀冲突守卫先跑：库里已在**另一个**前缀下存在本项目的 schema 时，409 中止，
+ *   绝不在新前缀下另建第二套空表。
+ * - 已初始化再走一遍只做幂等迁移（全部 skipped）与缺失默认设置的补齐。
+ * - 首次初始化播种默认设置，其中 setup_page_enabled=0 即"初始化完成显式写关"
+ *   （只门控页面，不门控 X-Setup-Secret 接口）。
+ */
+import { getTablePrefix } from "./table-prefix"
+import { isConfiguredSecret } from "../core/auth"
+import { PROJECT_SLUG } from "../config/project"
+import {
+  migrationsTable,
+  sessionsTable,
+  settingsTable,
+  usersTable
+} from "./tables"
+import {
+  LedgerConflictError,
+  runLedgerMigrations,
+  type LedgerMigrationResult
+} from "./migrations-runner"
+import type { Env } from "../types"
+
+export type SetupResult =
+  | {
+      success: true
+      tablePrefix: string
+      migrations: LedgerMigrationResult[]
+    }
+  | {
+      success: false
+      code: "PREFIX_CONFLICT"
+      error: string
+      resolvedPrefix: string
+      detectedPrefixes: string[]
+    }
+  | {
+      success: false
+      code: "LEDGER_CONFLICT"
+      error: string
+      resolvedPrefix: string
+      ledgers: string[]
+    }
+
+/** 初始化完成后写入的站点设置默认值（INSERT OR IGNORE，不覆盖已有值）。 */
+export const DEFAULT_SETTINGS: Record<string, string> = {
+  project_slug: PROJECT_SLUG,
+  setup_page_enabled: "0",
+  registration_enabled: "true",
+  registration_approval_required: "true",
+  registration_email_verification_enabled: "false",
+  email_provider: "none",
+  smtp_config: "{}",
+  resend_config: "{}"
+}
+
+/**
+ * 从 sqlite_master 的表名里识别"本项目已初始化的前缀"。
+ *
+ * 判定依据是同一前缀下的三件套：`users` + `system_settings` + `sessions`。
+ * 只看 `users` 会在共享库里误伤其他项目（也不足以区分本项目的半成品）。
+ */
+export function detectTablePrefixes(tableNames: string[]): Set<string> {
+  const present = new Set(tableNames)
+  const candidates = new Set<string>()
+  for (const name of present) {
+    if (name === "users") candidates.add("")
+    else if (name.endsWith("_users")) {
+      // 保留前缀里的尾部下划线，例如 "<前缀>users" → "<前缀>_"
+      candidates.add(name.slice(0, -"users".length))
+    }
+  }
+  const detected = new Set<string>()
+  for (const prefix of candidates) {
+    if (
+      present.has(settingsTable(prefix)) &&
+      present.has(sessionsTable(prefix))
+    ) {
+      detected.add(prefix)
+    }
+  }
+  return detected
+}
+
+async function listTables(db: D1Database): Promise<string[]> {
+  const rows = await db
+    .prepare(`SELECT name FROM sqlite_master WHERE type='table'`)
+    .all<{ name: string }>()
+  return rows.results.map((row) => row.name)
+}
+
+/** 是否已初始化：本项目（当前前缀）的 system_settings 表存在。 */
+export async function isInitialized(
+  db: D1Database,
+  prefix: string
+): Promise<boolean> {
+  const row = await db
+    .prepare(`SELECT name FROM sqlite_master WHERE type='table' AND name=?`)
+    .bind(settingsTable(prefix))
+    .first<{ name: string }>()
+  return row !== null
+}
+
+/** 读一条站点设置；表不存在或没有该键时返回 null（调用方决定默认值）。 */
+export async function getSetting(
+  db: D1Database,
+  prefix: string,
+  key: string
+): Promise<string | null> {
+  try {
+    const row = await db
+      .prepare(`SELECT value FROM ${settingsTable(prefix)} WHERE key = ?`)
+      .bind(key)
+      .first<{ value: string }>()
+    return row?.value ?? null
+  } catch {
+    return null
+  }
+}
+
+/** 写一条站点设置（UPSERT）；表不存在时抛错，由调用方决定怎么失败。 */
+export async function setSetting(
+  db: D1Database,
+  prefix: string,
+  key: string,
+  value: string
+): Promise<void> {
+  await db
+    .prepare(
+      `INSERT INTO ${settingsTable(prefix)} (key, value, updated_at)
+       VALUES (?, ?, ?)
+       ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`
+    )
+    .bind(key, value, new Date().toISOString())
+    .run()
+}
+
+/** setup 页面是否开放：只门控页面；未初始化恒开（防自锁）。 */
+export async function isSetupPageEnabled(
+  db: D1Database,
+  prefix: string
+): Promise<boolean> {
+  const value = await getSetting(db, prefix, "setup_page_enabled")
+  return (value ?? "1") !== "0"
+}
+
+/** 是否已有可用的所有者（已批准的管理员）。未初始化或查询失败一律 false。 */
+export async function ownerExists(
+  db: D1Database,
+  prefix: string
+): Promise<boolean> {
+  try {
+    const row = await db
+      .prepare(
+        `SELECT 1 AS ok FROM ${usersTable(prefix)} WHERE role = 'admin' AND status = 'active' LIMIT 1`
+      )
+      .first()
+    return row !== null
+  } catch {
+    return false
+  }
+}
+
+async function seedDefaultSettings(
+  db: D1Database,
+  prefix: string
+): Promise<void> {
+  const now = new Date().toISOString()
+  for (const [key, value] of Object.entries(DEFAULT_SETTINGS)) {
+    await db
+      .prepare(
+        `INSERT OR IGNORE INTO ${settingsTable(prefix)} (key, value, updated_at) VALUES (?, ?, ?)`
+      )
+      .bind(key, value, now)
+      .run()
+  }
+}
+
+export type SetupConflict = {
+  resolvedPrefix: string
+  detectedPrefixes: string[]
+  reason: "foreign-prefix" | "table-collision"
+}
+
+/**
+ * 当前前缀下若已有一张不是本项目结构的 users 表，迁移里的
+ * `CREATE TABLE IF NOT EXISTS` 会静默复用它——按冲突处理，不动任何表。
+ * 判定只看 users 本身的三列（password_hash/status/role）：三者齐备才可能是
+ * 本项目部分失败的迁移（可以续跑修复）；不看其它表，别人的 users 同样必须拦住。
+ */
+async function hasForeignUsersTable(
+  db: D1Database,
+  prefix: string
+): Promise<boolean> {
+  const existing = await db
+    .prepare(`SELECT name FROM sqlite_master WHERE type='table' AND name=?`)
+    .bind(usersTable(prefix))
+    .first<{ name: string }>()
+  if (!existing) return false
+  const columns = await db
+    .prepare(`PRAGMA table_info(${usersTable(prefix)})`)
+    .all<{ name: string }>()
+  const names = new Set(columns.results.map((column) => column.name))
+  return !(
+    names.has("password_hash") &&
+    names.has("status") &&
+    names.has("role")
+  )
+}
+
+/**
+ * 只读前缀冲突探测：库里已在另一个前缀下初始化过本项目、或当前前缀被别人的同名表
+ * 占用时返回冲突信息。setup 路由在限流（会建计数表）之前先调它，保证冲突时
+ * 一个表都不写。
+ *
+ * 语义：
+ * - 只有当某个外来三件套的 project_slug 等于本项目 PROJECT_SLUG、且前缀 ≠ 当前生效前缀时，
+ *   才算真冲突（PREFIX_CONFLICT）。
+ * - 兄弟项目（不同 slug）或存量项目（无 project_slug）一律放行，共享 D1 库是常态。
+ */
+export async function findForeignPrefixConflict(
+  env: Env
+): Promise<SetupConflict | null> {
+  const prefix = getTablePrefix(env)
+  const detected = [...detectTablePrefixes(await listTables(env.DB))].sort()
+  const foreignConflicts: string[] = []
+  for (const foreignPrefix of detected) {
+    if (foreignPrefix === prefix) continue
+    const slug = await getSetting(env.DB, foreignPrefix, "project_slug")
+    if (slug === PROJECT_SLUG) {
+      foreignConflicts.push(foreignPrefix)
+    }
+  }
+  if (foreignConflicts.length > 0) {
+    return {
+      resolvedPrefix: prefix,
+      detectedPrefixes: foreignConflicts,
+      reason: "foreign-prefix"
+    }
+  }
+  if (await hasForeignUsersTable(env.DB, prefix)) {
+    return {
+      resolvedPrefix: prefix,
+      detectedPrefixes: [prefix],
+      reason: "table-collision"
+    }
+  }
+  return null
+}
+
+function prefixConflict(conflict: SetupConflict): SetupResult {
+  const { resolvedPrefix, detectedPrefixes, reason } = conflict
+  const error =
+    reason === "table-collision"
+      ? `TABLE_PREFIX collision: a table "${usersTable(resolvedPrefix)}" already exists ` +
+        `but it is not this project's schema (missing password_hash/status/role), so ` +
+        `CREATE TABLE IF NOT EXISTS would silently reuse it. Remove or rename that table, ` +
+        `or choose another TABLE_PREFIX, then run setup again.`
+      : `TABLE_PREFIX mismatch: this database is already initialized for project "${PROJECT_SLUG}" ` +
+        `under a different table prefix (${detectedPrefixes.join(", ")}), ` +
+        `but TABLE_PREFIX resolves to "${resolvedPrefix}". Set TABLE_PREFIX explicitly to ` +
+        `keep the existing tables, or migrate the tables to the new prefix before retrying setup.`
+  return {
+    success: false,
+    code: "PREFIX_CONFLICT",
+    error,
+    resolvedPrefix,
+    detectedPrefixes
+  }
+}
+
+/** 初始化或升级当前前缀下的数据库。 */
+export async function runSetup(env: Env): Promise<SetupResult> {
+  const prefix = getTablePrefix(env)
+  const db = env.DB
+
+  const conflict = await findForeignPrefixConflict(env)
+  if (conflict) {
+    return prefixConflict(conflict)
+  }
+
+  let migrations: LedgerMigrationResult[]
+  try {
+    migrations = await runLedgerMigrations(env)
+  } catch (err) {
+    // 规格 §5.1：新旧账本同存（或旧账本结构不符）属异常，中止并汇报，
+    // 不合并、不删除、也不继续播种默认设置；一个表都不动。
+    if (err instanceof LedgerConflictError) {
+      return {
+        success: false,
+        code: "LEDGER_CONFLICT",
+        error: err.message,
+        resolvedPrefix: prefix,
+        ledgers: err.ledgers
+      }
+    }
+    throw err
+  }
+  await seedDefaultSettings(db, prefix)
+
+  return { success: true, tablePrefix: prefix, migrations }
+}
+
+/**
+ * SETUP_SECRET 是否已配置：缺失、空白、或仍是部署模板里的 `*_PLACEHOLDER` 一律算
+ * 未配置。未配置时 setup 密钥接口必须 500 失败关闭（绝不把空值当密钥比较）。
+ * 判定与签名钥共用 `core/auth.ts` 的 `isConfiguredSecret`，不各写一套。
+ */
+export function isSetupSecretConfigured(secret?: string | null): boolean {
+  return isConfiguredSecret(secret)
+}
+
+/** 供测试断言账本确实建在当前前缀下。 */
+export function ledgerName(prefix: string): string {
+  return migrationsTable(prefix)
+}

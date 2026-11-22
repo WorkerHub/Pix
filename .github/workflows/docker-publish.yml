@@ -1,0 +1,119 @@
+name: docker-publish
+
+on:
+  push:
+    tags: ["server-v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # Docker Hub 需要在仓库 Settings → Secrets 里配置
+      # DOCKERHUB_USERNAME 与 DOCKERHUB_TOKEN（Access Token）后才会启用；
+      # 没配置时自动跳过，GHCR 照常发布。
+      - name: Login to Docker Hub
+        if: env.DOCKERHUB_USERNAME != ''
+        env:
+          DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Compute image tags
+        id: tags
+        env:
+          DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+        run: |
+          GHCR_REPO="ghcr.io/workerhub/pix-service"
+          DH_REPO="docker.io/workerhub/pix-service"
+
+          TAGS="${GHCR_REPO}:latest"
+          if [ -n "$DOCKERHUB_USERNAME" ]; then
+            TAGS="$TAGS,${DH_REPO}:latest"
+          fi
+
+          if [ "${{ github.ref_type }}" = "tag" ]; then
+            RAW_TAG="${{ github.ref_name }}"
+            VER_TAG="${RAW_TAG#server-}"
+            TAGS="$TAGS,${GHCR_REPO}:${VER_TAG},${GHCR_REPO}:${RAW_TAG}"
+            if [ -n "$DOCKERHUB_USERNAME" ]; then
+              TAGS="$TAGS,${DH_REPO}:${VER_TAG},${DH_REPO}:${RAW_TAG}"
+            fi
+          fi
+
+          echo "tags=$TAGS" >> "$GITHUB_OUTPUT"
+
+      - name: Build image for smoke test
+        uses: docker/build-push-action@v6
+        with:
+          context: machine
+          file: machine/Dockerfile
+          platforms: linux/amd64
+          load: true
+          tags: pix-service:smoke
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Smoke test container (ComfyUI ready gate)
+        run: |
+          echo "Starting container for smoke test..."
+          docker run -d --name smoke-test \
+            -e PIX_SERVER_SECRET=smoke-secret \
+            -e SKIP_MODEL_DOWNLOAD=1 \
+            -p 8190:8190 pix-service:smoke
+
+          echo "Waiting for proxy and ComfyUI to become ready (timeout 180s)..."
+          PASSED=0
+          for i in $(seq 1 90); do
+            sleep 2
+            RES=$(curl -s -H "X-Pix-Secret: smoke-secret" http://127.0.0.1:8190/health || true)
+            echo "Attempt $i: $RES"
+            if echo "$RES" | grep -q '"ok":true' && echo "$RES" | grep -q '"comfyReady":true'; then
+              echo "Smoke test passed: ComfyUI is up and comfyReady is true!"
+              PASSED=1
+              break
+            fi
+          done
+
+          if [ "$PASSED" -ne 1 ]; then
+            echo "Smoke test failed! ComfyUI did not reach ready state."
+            echo "=== Container logs ==="
+            docker logs smoke-test
+            docker rm -f smoke-test || true
+            exit 1
+          fi
+
+          docker rm -f smoke-test
+          echo "Smoke test container cleaned up successfully."
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: machine
+          file: machine/Dockerfile
+          platforms: linux/amd64
+          push: true
+          tags: ${{ steps.tags.outputs.tags }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
