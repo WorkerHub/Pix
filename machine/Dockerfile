@@ -1,4 +1,4 @@
-FROM python:3.11-slim
+FROM python:3.15-slim
 
 # Prevent python from writing pyc files and enable unbuffered output
 ENV PYTHONDONTWRITEBYTECODE=1 \
